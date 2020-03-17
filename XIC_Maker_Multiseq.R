@@ -44,7 +44,7 @@ target_seq_file <-
 
 # How many pforms to search (arranged by Q value)
 
-top_n_pforms <- 4
+top_n_pforms <- 100
 
 # Use table with depleted isotope ratios?
 
@@ -79,21 +79,13 @@ abund_cutoff <-
 
 mz_window <- 4
 
-# Make zoomed mass spectra with multiple scans?
-
-make_multiscan_MS <- FALSE
-
-# How many scans to average for zoomed masss spectra
-
-nscans <- 3
-
 # Output file size (width,height in inches)
 
 outputWidth <- 16
 
 # Output file DPI
 
-outputDPI <- 150
+outputDPI <- 200
 
 # Functions ---------------------------------------------------------------
 
@@ -535,7 +527,7 @@ check_chemform(isotopes = isotopes_to_use, chemforms = chemform) %>%
   `if`(., stop("Problem with chemical formula"))
 
 iso_dist <- 
-  future_map2(
+  map2(
     chemform_withH,
     list(target_charges) %>% rep(length(target_seqs)),
     ~map2(
@@ -642,15 +634,6 @@ RT_of_maxTIC <-
   sumXIC2 %>% 
   map(
     ~filter(.x, int_sum == max(int_sum))
-  ) %>% 
-  map(
-    ~pull(.x, times) 
-  )
-
-RT_of_maxTIC_topN <- 
-  sumXIC2 %>% 
-  map(
-    ~top_n(.x, nscans, int_sum)
   ) %>% 
   map(
     ~pull(.x, times) 
@@ -816,7 +799,7 @@ timer$stop("Make MS, Top 1 most intense PART 1")
 timer$start("Make MS, Top 1 most intense, PART 2")
 
 spectra_highestTIC_plots <- 
-  future_pmap(
+  pmap(
     list(
       spectra_highestTIC_list,
       names(spectra_highestTIC_list) %>% as.list(),
@@ -899,7 +882,7 @@ tablegrob_heights <-
   map(use_series, "heights") %>%
   map(length)
 
-future_pwalk(
+pwalk(
   list(
     tablegrob_filenames,
     tablegrob_list_top1_arranged,
@@ -917,3 +900,5 @@ future_pwalk(
 message("\n\n Done with top 1!")
 
 timer$stop("Save MS, Top 1")
+
+getTimer(timer)
