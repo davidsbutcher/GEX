@@ -45,7 +45,7 @@ target_seq_file <-
 
 # How many pforms to search (arranged by Q value)
 
-top_n_pforms <- 5
+top_n_pforms <- 4
 
 # Use table with depleted isotope ratios?
 
@@ -97,6 +97,22 @@ outputWidth <- 16
 outputDPI <- 150
 
 # Functions ---------------------------------------------------------------
+
+mem_change_selection <- function() {
+  
+  context <-  
+    rstudioapi::getActiveDocumentContext()
+  
+  out <- 
+    paste0("pryr::mem_change(~{
+           ",
+      context$selection[[1]]$text,
+      "
+      })")
+  
+  rstudioapi::modifyRange(context$selection[[1]]$range, out, id = context$id)
+
+}
 
 kickout <- function(list) {
   
@@ -377,9 +393,9 @@ timer <-
 
 timer$start("Make future workers")
 
-if (top_n_pforms < 10) plan(multisession(workers = top_n_pforms))
+if (top_n_pforms < 10) plan(multisession(workers = as.integer(top_n_pforms), gc = TRUE, persistent = FALSE))
 
-if (top_n_pforms <= 10) plan(multisession(workers = 10))
+if (top_n_pforms >= 10) plan(multisession(workers = 10L, gc = TRUE, persistent = FALSE))
 
 timer$stop("Make future workers")
 
@@ -573,6 +589,7 @@ timer$stop("Chemical formulas and isotopic distributions")
 
 timer$start("Calculate and plot XICs")
 
+
 XIC_target_mz <- 
   iso_dist_list_union %>% 
   map(~pull(.x, `m/z`)) %>% 
@@ -587,6 +604,7 @@ XIC <-
       tol = XIC_tol
     )
   )
+
 
 XIC_nonull <- 
   XIC %>%
@@ -900,180 +918,3 @@ future_pwalk(
 message("\n\n Done with top 1!")
 
 timer$stop("Save MS, Top 1")
-
-# Get MS, Top N --------------------------------------------------
-
-if (make_multiscan_MS == FALSE) stopQuietly()
-
-timer$start("Make MS, Top N most intense")
-
-scansToRead_topN <- 
-  map(
-    RT_of_maxTIC_topN,
-    ~map_dbl(
-      .x = .x,
-      ~{filter(scanNumber_and_RT, StartTime == .x) %>% 
-          pull(scanNumber)
-      }
-    )
-  ) %>% 
-  map(as.list)
-
-scansToPlot_topN <- 
-  future_map(
-    scansToRead_topN,
-    ~map(
-      .x = .x,
-      ~readScans(
-        rawFile,
-        scans = .x
-      )
-    ),
-    .progress = TRUE
-  )
-
-spectra_highestTIC_topN <- 
-  map(
-    scansToPlot_topN,
-    ~map(
-      .x = .x,
-      ~tibble(
-        scan = .x[[1]]$scan,
-        mz = .x[[1]]$mZ,
-        intensity = .x[[1]]$intensity)
-    )
-  )
-
-spectra_highestTIC_topNave <-
-  spectra_highestTIC_topN %>%
-  future_map(
-    ~map(
-      .x = .x,
-      ~new(
-        "Spectrum1",
-        mz = .x$mz,
-        intensity = .x$intensity,
-        acquisitionNum = .x$scan[[1]] %>% as.integer()
-      )
-    )
-  ) %>%
-  future_map(
-    ~meanMzInts(
-      .x,
-      intensityFun = base::mean,
-      weighted = FALSE,
-      ppm = 0.1,
-      timeDomain = FALSE,
-      unionPeaks = TRUE
-    )
-  ) %>% future_map(
-    ~tibble(
-      mz = .x@mz,
-      intensity = .x@intensity,
-      scan = .x@acquisitionNum
-    )
-  )
-
-spectra_highestTIC_list_topN <- 
-  spectra_highestTIC_topNave %>% 
-  map(list) %>% 
-  map2(
-    mz_max_abund,
-    ~rep(.x, length(.y))
-  )
-
-spectra_highestTIC_plots_topN <- 
-  future_pmap(
-    list(
-      spectra_highestTIC_list_topN,
-      names(spectra_highestTIC_list_topN) %>% as.list(),
-      mz_max_abund,
-      mz_max_abund_charge
-    ),
-    ~pmap(
-      list(
-        ..1,
-        ..2,
-        ..3,
-        ..4
-      ),
-      ~make_spectrum_topN(
-        df = ..1,
-        x = mz,
-        y = intensity,
-        accession = ..2,
-        charge = ..4,
-        xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
-        theme = MStheme01
-      )
-    )
-  )
-
-timer$stop("Make MS, Top N most intense")
-
-# Arrange MS Grobs, Top N ----------------------------------------------
-
-timer$start("Arrange MS grobs, Top N most intense")
-
-tablegrob_list_topN <-
-  future_map(
-    spectra_highestTIC_plots_topN,
-    ~arrangeGrob(
-      grobs = .x,
-      ncol = 4,
-      top = paste0(rawFileName, ", ", nscans, " scans averaged") 
-    )
-  )
-
-tablegrob_list_topN_arranged <-
-  future_map(
-    tablegrob_list_topN,
-    ~gridExtra::grid.arrange(.x),
-    .progress = TRUE
-  )
-
-timer$stop("Arrange MS grobs, Top N most intense")
-
-# Save arranged MS, Top N -------------------------------------------------
-
-timer$start("Save multi-arranged MS grobs, Top N most intense")
-
-if (dir_exists(paste0("output/XIC_summary/", systime, "/")) == FALSE) dir_create(paste0("output/XIC_summary/", systime, "/"))
-
-tablegrob_filenames <-
-  names(target_seqs) %>%
-  as.list() %>%
-  map(
-    ~paste(
-      "output/XIC_summary/",
-      systime,
-      "/mass_spec/",
-      fs::path_ext_remove(rawFileName),
-      "_",
-      .x,
-      "_spectrum_zooms_topN.png",
-      sep = ""
-    )
-  )
-
-tablegrob_heights <-
-  tablegrob_list_topN %>%
-  map(use_series, "heights") %>%
-  map(length)
-
-future_pwalk(
-  list(
-    tablegrob_filenames,
-    tablegrob_list_topN_arranged,
-    tablegrob_heights
-  ),
-  ~ggsave(
-    filename = ..1 ,
-    plot = ..2,
-    width = outputWidth,
-    height = ..3 * 3,
-    dpi = outputDPI
-  )
-)
-
-timer$stop("Save multi-arranged MS grobs, Top N most intense")
