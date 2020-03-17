@@ -16,7 +16,6 @@ library(gridExtra)
 library(glue)
 library(RSQLite)
 library(purrr)
-library(furrr)
 library(readr)
 library(openxlsx)
 library(fs)
@@ -391,13 +390,13 @@ MStheme01 <-
 timer <- 
   createTimer(verbose = FALSE)
 
-timer$start("Make future workers")
-
-if (top_n_pforms < 10) plan(multisession(workers = as.integer(top_n_pforms), gc = TRUE, persistent = FALSE))
-
-if (top_n_pforms >= 10) plan(multisession(workers = 10L, gc = TRUE, persistent = FALSE))
-
-timer$stop("Make future workers")
+# timer$start("Make future workers")
+# 
+# if (top_n_pforms < 10) plan(multisession(workers = as.integer(top_n_pforms), gc = TRUE, persistent = FALSE))
+# 
+# if (top_n_pforms >= 10) plan(multisession(workers = 10L, gc = TRUE, persistent = FALSE))
+# 
+# timer$stop("Make future workers")
 
 # Check filename and path -------------------------------------------------
 
@@ -596,7 +595,7 @@ XIC_target_mz <-
   map(unique)
 
 XIC <- 
-  future_map(
+  map(
     XIC_target_mz,
     ~readXICs(
       rawfile = rawFile,
@@ -614,12 +613,12 @@ sumXIC1 <-
   XIC_nonull %>% 
   modify_depth(2, as_tibble) %>% 
   modify_depth(2, ~select(.x, times, intensities)) %>%
-  future_map(reduce, full_join, .progress = TRUE)
+  map(reduce, full_join, .progress = TRUE)
 
 sumXIC2 <-  
   sumXIC1 %>% 
-  future_map(~group_by(.x, times)) %>% 
-  future_map(~summarize(.x, int_sum = sum(intensities)))
+  map(~group_by(.x, times)) %>% 
+  map(~summarize(.x, int_sum = sum(intensities)))
 
 sumXIC_summary <- 
   sumXIC2 %>% 
@@ -766,7 +765,7 @@ scanNumsToRead <-
   )
 
 scansToPlot <- 
-  future_map(
+  map(
     scanNumsToRead,
     ~readScans(
       rawFile,
@@ -851,7 +850,7 @@ timer$stop("Make MS, Top 1 most intense, PART 2")
 timer$start("Arrange MS grobs, Top 1 most intense")
 
 tablegrob_list_top1 <-
-  future_map(
+  map(
     spectra_highestTIC_plots,
     ~arrangeGrob(
       grobs = .x,
@@ -861,7 +860,7 @@ tablegrob_list_top1 <-
   )
 
 tablegrob_list_top1_arranged <-
-  future_map(
+  map(
     tablegrob_list_top1,
     ~gridExtra::grid.arrange(.x),
     .progress = TRUE
