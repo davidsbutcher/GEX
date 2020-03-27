@@ -41,5 +41,6 @@ vignettes/*.pdf
 deprecated/
 
 extras/
-
+output/
 raw/
+.Rproj.user
