@@ -16,6 +16,7 @@ library(gridExtra)
 library(glue)
 library(RSQLite)
 library(purrr)
+library(furrr)
 library(readr)
 library(openxlsx)
 library(fs)
@@ -30,25 +31,26 @@ library(timeR)
 # Raw File Directory
 
 rawFileDir <- 
-  "raw/"
+  "Z:/ICR/Zeljka Popovic/Zubarev Project Fall 2019 Iso Dep/Data Collected AugSept 2019/raw files/"
 
 #Raw File Name
 
 rawFileName <- 
-  "ZP_09032019_Norm_F3F4_A_01.raw"
+  "ZP_09042019_ID_F6_A_01.raw"
 
 # AA sequence to use for calculation of isotopic pattern
 
 target_seq_file <- 
-  "input/201909_EcoliBL21_GF_Norm_F01-12_2run_nomod_F3F4_tightAbsMass_proteoforms.csv"
-
-# How many pforms to search (arranged by Q value)
-
-top_n_pforms <- 100
+  # "input/201909_EcoliBL21_GF_Norm_F01-12_2run_nomod_F3F4_tightAbsMass_proteoforms.csv"
+  "input/ZP_IDs_20200317_F6.csv"
 
 # Use table with depleted isotope ratios?
 
 use_depleted_isotopes <- TRUE
+
+# How many pforms to search (arranged by Q value), set to NULL for all proteoforms
+
+top_n_pforms <- NULL
 
 # Charge to use for calculating isotopic distribution
 
@@ -81,11 +83,11 @@ mz_window <- 4
 
 # Output file size (width,height in inches)
 
-outputWidth <- 16
+MSoutputWidth <- 18
 
 # Output file DPI
 
-outputDPI <- 200
+MSoutputDPI <- 200
 
 # Functions ---------------------------------------------------------------
 
@@ -105,13 +107,11 @@ mem_change_selection <- function() {
 
 }
 
-kickout <- function(list) {
+kickout <- function(list, allowed_ext = NULL) {
   
   # This function removes any element from the list of input files
   # (from root/input) which does not have one of the allowed
   # extensions or which has "deprecated"
-  
-  allowed_ext <- c("raw")
   
   for (i in rev(seq_along(list))) {
     
@@ -165,7 +165,8 @@ make_XIC_plot = function(df, x, y, seq_name,  theme = NULL) {
   
 }
 
-make_spectrum_top1 = function(df, x, y, accession = "NA", scan_num = 0, charge = 0, xrange, theme  = NULL) {
+make_spectrum_top1 = 
+  function(df, x, y, accession = "NA", scan_num = 0, charge = 0, xrange, theme  = NULL) {
   
   {
     xmin <- 
@@ -249,83 +250,91 @@ make_spectrum_top1 = function(df, x, y, accession = "NA", scan_num = 0, charge =
   
 }
 
-make_spectrum_topN = function(df, x, y, accession = "NA", charge = 0, xrange, theme  = NULL) {
-  
-  {
-    xmin <- 
-      df %>% 
-      filter({{x}} == min({{x}})) %>%
-      pull({{x}})
+make_spectrum_top1_v2 = 
+  function(df, x, y, accession = "NA", scan_num = 0, charge = 0, xrange = c(0,0), theme  = NULL) {
     
-    xmax <- 
-      df %>% 
-      filter({{x}} == max({{x}})) %>%
-      pull({{x}})
-    
-    if (xrange[[1]] < xmin) {
+    {
+      xmin <- 
+        df %>% 
+        filter({{x}} == min({{x}})) %>%
+        pull({{x}})
       
-      xrange[[1]] <- xmin
+      xmax <- 
+        df %>% 
+        filter({{x}} == max({{x}})) %>%
+        pull({{x}})
+      
+      if (xrange[[1]] < xmin) {
+        
+        xrange[[1]] <- xmin
+        
+      }
+      
+      if (xrange[[2]] > xmax) {
+        
+        xrange[[2]] <- xmax
+        
+      }
+      
+      ymax <-
+        df %>% 
+        filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
+        filter({{y}} == max({{y}})) %>%
+        pull({{y}}) %>% 
+        extract(1)
+      
+      if (length(ymax) == 0) {
+        
+        ymax <- 100
+        
+      } 
+      
+      if (all.equal(0, ymax) == TRUE) {
+        
+        ymax <- 100
+        
+      }
+      
+      scan_cap <- 
+        df %>% 
+        pull({{scan_num}}) %>% 
+        .[[1]]
       
     }
     
-    if (xrange[[2]] > xmax) {
-      
-      xrange[[2]] <- xmax
-      
-    }
-    
-    ymax <-
-      df %>% 
+    df %>%
       filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
-      filter({{y}} == max({{y}})) %>%
-      pull({{y}}) %>% 
-      extract(1)
-    
-    if (length(ymax) == 0) {
-      
-      ymax <- 100
-      
-    } 
-    
-    if (all.equal(0, ymax) == TRUE) {
-      
-      ymax <- 100
-      
-    }
+      ggplot(aes({{x}}, {{y}})) +
+      geom_line() +
+      geom_vline(
+        aes(xintercept = xrange[[1]]+((xrange[[2]]-xrange[[1]])/2), color = "red", alpha = 0.5)
+      ) +
+      annotate(
+        "text",
+        x = xrange[[2]],
+        y = ymax,
+        label = glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}"),
+        vjust="inward",
+        hjust="inward",
+        size = 3,
+        alpha = 0.5
+      ) +
+      lims(
+        x = xrange,
+        y = c(0, ymax)
+      ) +
+      guides(
+        color = "none",
+        size = "none",
+        alpha = "none"
+      ) +
+      labs(
+        x = "m/z",
+        y = "Intensity"
+      ) +
+      theme
     
   }
-  
-  df %>%
-    ggplot(aes({{x}}, {{y}})) +
-    geom_line() +
-    geom_vline(
-      aes(xintercept = xrange[[1]]+((xrange[[2]]-xrange[[1]])/2), color = "red", alpha = 0.5)
-    ) +
-    annotate(
-      "text",
-      x = xrange[[2]],
-      y = ymax,
-      label = glue("{accession}\n Charge +{charge}"),
-      vjust="inward",
-      hjust="inward",
-      size = 3,
-      alpha = 0.5
-    ) +
-    
-    coord_cartesian(xlim = xrange, ylim = c(0, ymax), expand = TRUE) +
-    guides(
-      color = "none",
-      size = "none",
-      alpha = "none"
-    ) +
-    labs(
-      x = "m/z",
-      y = "Intensity"
-    ) +
-    theme
-  
-}
-
 
 # ggplot themes -----------------------------------------------------------
 
@@ -377,18 +386,36 @@ MStheme01 <-
   )
 
 
+
 # Make future workers and timer -------------------------------------------
 
 timer <- 
   createTimer(verbose = FALSE)
 
-# timer$start("Make future workers")
-# 
-# if (top_n_pforms < 10) plan(multisession(workers = as.integer(top_n_pforms), gc = TRUE, persistent = FALSE))
-# 
-# if (top_n_pforms >= 10) plan(multisession(workers = 10L, gc = TRUE, persistent = FALSE))
-# 
-# timer$stop("Make future workers")
+timer$start("Make future workers")
+
+if (is.null(top_n_pforms) == FALSE) {
+  
+  if (top_n_pforms < 10) {
+    
+    plan(multisession(workers = as.integer(top_n_pforms), gc = TRUE, persistent = FALSE))
+    
+  }
+  
+  if (top_n_pforms >= 10) {
+    
+    plan(multisession(workers = 10L, gc = TRUE, persistent = FALSE))
+    
+  }
+  
+} else {
+  
+  plan(multisession(workers = 5L, gc = TRUE, persistent = FALSE))
+  
+}
+  
+
+timer$stop("Make future workers")
 
 # Check filename and path -------------------------------------------------
 
@@ -416,16 +443,69 @@ rawFile <-
 
 # Process target sequences ------------------------------------------------
 
-target_seqs <- 
-  target_seq_file %>% 
-  readr::read_csv() %>% 
-  group_by(UNIPROTKB) %>% 
-  filter(GlobalQvalue == max(GlobalQvalue)) %>%
-  ungroup() %>% 
-  top_n(top_n_pforms, desc(GlobalQvalue)) %>% 
-  select(UNIPROTKB, ProteoformSequence) %>% 
-  deframe() %>% 
-  as.list()
+if (is.null(top_n_pforms) == TRUE) {
+  
+  target_seqs <- 
+    target_seq_file %>% 
+    readr::read_csv() %>% 
+    # group_by(UNIPROTKB) %>% 
+    # filter(GlobalQvalue == max(GlobalQvalue)) %>%
+    # ungroup() %>% 
+    select(any_of(c("UNIPROTKB", "PFR")), ProteoformSequence) %>% 
+    deframe() %>% 
+    as.list()
+  
+} else {
+  
+  target_seqs <- 
+    target_seq_file %>% 
+    readr::read_csv() %>% 
+    # group_by(UNIPROTKB) %>% 
+    # filter(GlobalQvalue == max(GlobalQvalue)) %>%
+    # ungroup() %>% 
+    top_n(top_n_pforms, desc(GlobalQvalue)) %>% 
+    select(any_of(c("UNIPROTKB", "PFR")), ProteoformSequence) %>% 
+    deframe() %>% 
+    as.list()
+  
+  
+}
+
+# Create save directory ---------------------------------------------------
+
+systime <- format(Sys.time(), "%Y%m%d_%H%M")
+
+if (use_depleted_isotopes == FALSE) {
+  
+  saveDir <-
+    paste0(
+      "output/",
+      systime,
+      "_",
+      path_ext_remove(rawFileName),
+      "_",
+      length(target_seqs),
+      "seqs_Normiso/"
+    )
+  
+} else if (use_depleted_isotopes == TRUE) {
+  
+  saveDir <-
+    paste0(
+      "output/",
+      systime,
+      "_",
+      path_ext_remove(rawFileName),
+      "_",
+      length(target_seqs),
+      "seqs_IDiso/"
+    )
+  
+} else {
+  
+  stop("use_depleted_isotopes not set to TRUE or FALSE")
+  
+}
 
 # Get elemental composition -----------------------------------------------
 
@@ -545,10 +625,12 @@ iso_dist <-
     )
   )
 
-target_charges_list <- 
+target_charges_list <-
   list(target_charges) %>%
-  rep(length(target_seqs)) %>% 
-  map(as.list)
+  rep(length(target_seqs))
+
+# %>%
+#   map(as.list)
 
 iso_dist_list_union <-
   iso_dist %>% 
@@ -580,7 +662,6 @@ timer$stop("Chemical formulas and isotopic distributions")
 
 timer$start("Calculate and plot XICs")
 
-
 XIC_target_mz <- 
   iso_dist_list_union %>% 
   map(~pull(.x, `m/z`)) %>% 
@@ -595,7 +676,6 @@ XIC <-
       tol = XIC_tol
     )
   )
-
 
 XIC_nonull <- 
   XIC %>%
@@ -612,6 +692,40 @@ sumXIC2 <-
   map(~group_by(.x, times)) %>% 
   map(~summarize(.x, int_sum = sum(intensities)))
 
+# Get RT corresponding to maximum TIC for each sequence for later use in
+# making spectra
+
+RT_of_maxTIC <- 
+  sumXIC2 %>% 
+  map(
+    ~filter(.x, int_sum == max(int_sum))
+  ) %>% 
+  map(
+    ~pull(.x, times) 
+  )
+
+rawFileMetadata <- 
+  read.raw(
+    rawFile,
+    rawDiag = FALSE
+  ) %>% 
+  as_tibble()
+
+scanNumber_and_RT <- 
+  rawFileMetadata %>% 
+  select(scanNumber, StartTime)
+
+scanNumsToRead <- 
+  map(
+    RT_of_maxTIC,
+    ~filter(scanNumber_and_RT, StartTime == .x)
+  ) %>% 
+  map(
+    ~pull(.x, scanNumber) 
+  )
+
+# Make summary of XIC data
+
 sumXIC_summary <- 
   sumXIC2 %>% 
   set_names(chemform) %>% 
@@ -625,26 +739,14 @@ sumXIC_summary <-
   reduce(union_all) %>% 
   mutate(Sequence = unlist(target_seqs)) %>% 
   mutate(seq_name = names(target_seqs)) %>% 
-  select(seq_name, Sequence, chem_form, max_TIC)
+  mutate(RT_of_maxTIC = unlist(RT_of_maxTIC)) %>% 
+  mutate(scan_of_maxTIC = unlist(scanNumsToRead)) %>% 
+  select(seq_name, Sequence, chem_form, max_TIC, everything())
 
-# Get RT corresponding to maximum TIC for each sequence for later use in
-# making spectra
-
-RT_of_maxTIC <- 
-  sumXIC2 %>% 
-  map(
-    ~filter(.x, int_sum == max(int_sum))
-  ) %>% 
-  map(
-    ~pull(.x, times) 
-  )
 
 # Plot XICs ---------------------------------------------------------------
 
 if (dir.exists("output/")== FALSE) dir.create("output/")
-if (dir.exists("output/XIC_summary/")== FALSE) dir.create("output/XIC_summary/")
-
-systime <- format(Sys.time(), "%Y%m%d_%H%M")
 
 XIC_plots <- 
   sumXIC2 %>% 
@@ -674,46 +776,37 @@ timer$stop("Calculate and plot XICs")
 
 timer$start("Save XIC results")
 
-if (dir_exists(paste0("output/XIC_summary/", systime, "/")) == FALSE) dir_create(paste0("output/XIC_summary/", systime, "/"))
+if (dir_exists(saveDir) == FALSE) dir_create(saveDir)
 
 # Save spreadsheet data
 
 readr::write_csv(
   sumXIC_summary,
   path = 
-    paste(
-      "output/XIC_summary/",
-      systime,
-      "_",
+    paste0(
+      saveDir,
       fs::path_ext_remove(rawFileName),
-      "_XIC_summary.csv",
-      sep = ""
+      "_XIC_summary.csv"
     )
 )
 
 writexl::write_xlsx(
   iso_dist_list_union,
   path = 
-    paste(
-      "output/XIC_summary/",
-      systime,
-      "_",
+    paste0(
+      saveDir,
       fs::path_ext_remove(rawFileName),
-      "_isotopic_distributions.xlsx",
-      sep = ""
+      "_isotopic_dist.xlsx"
     )
 )
 
 # Save chromatograms, all together
 
 XIC_groblist_filename <- 
-  paste(
-    "output/XIC_summary/",
-    systime,
-    "/",
+  paste0(
+    saveDir,
     fs::path_ext_remove(rawFileName),
-    "_XICs",
-    sep = ""
+    "_XICs"
   )
 
 ggsave(
@@ -729,23 +822,6 @@ timer$stop("Save XIC results")
 # Make MS, Top 1 ---------------------------------------------------
 
 timer$start("Make MS, Top 1 most intense PART 1")
-
-scanNumber_and_RT <- 
-  read.raw(
-    rawFile,
-    rawDiag = FALSE
-  ) %>% 
-  as_tibble() %>% 
-  select(scanNumber, StartTime)
-
-scanNumsToRead <- 
-  map(
-    RT_of_maxTIC,
-    ~filter(scanNumber_and_RT, StartTime == .x)
-  ) %>% 
-  map(
-    ~pull(.x, scanNumber) 
-  )
 
 scansToPlot <- 
   map(
@@ -786,13 +862,66 @@ mz_max_abund_charge <-
   ) %>% 
   map(as.list)
 
-spectra_highestTIC_list <- 
-  spectra_highestTIC %>% 
-  map(list) %>% 
+spectra_highestTIC_names <-
+  spectra_highestTIC %>%
+  names() %>% 
+  map(list) %>%
   map2(
     mz_max_abund,
     ~rep(.x, length(.y))
   )
+
+# Find potential MS2 scans
+
+rawFileMetadataMS2 <- 
+  rawFileMetadata %>% 
+  select(scanNumber, StartTime, MSOrder, MS2IsolationWidth, PrecursorMass, TIC) %>% 
+  filter(MSOrder == "Ms2") %>% 
+  mutate(isoWindowLow = PrecursorMass - MS2IsolationWidth/2) %>% 
+  mutate(isoWindowHigh = PrecursorMass + MS2IsolationWidth/2)
+
+potential_MS2 <- 
+  mz_max_abund %>% 
+  map(
+    ~map(
+      .x,
+      ~{
+        filter(
+          rawFileMetadataMS2,
+          isoWindowLow < .x & isoWindowHigh > .x
+        ) %>% 
+          arrange(desc(TIC)) %>% 
+          pull(scanNumber) %>% 
+          as.character() %>% 
+          paste(collapse = ", ")
+      }
+    )
+  )
+
+potential_MS2 <- 
+  map2(
+    potential_MS2,
+    mz_max_abund_charge,
+    ~set_names(.x, .y)
+  )
+
+potential_MS2_output <- 
+  map(
+    potential_MS2,
+    enframe,
+    name = "charge",
+    value = "potential_MS2_scans"
+  ) %>% 
+  map(
+    tidyr::unnest,
+    cols = c(potential_MS2_scans)
+  ) %>% 
+  imap(
+    ~mutate(.x, name = .y)
+  ) %>% 
+  reduce(union_all) %>% 
+  filter(potential_MS2_scans != "") %>% 
+  select(name, charge, potential_MS2_scans)
 
 timer$stop("Make MS, Top 1 most intense PART 1")
 
@@ -801,8 +930,8 @@ timer$start("Make MS, Top 1 most intense, PART 2")
 spectra_highestTIC_plots <- 
   pmap(
     list(
-      spectra_highestTIC_list,
-      names(spectra_highestTIC_list) %>% as.list(),
+      spectra_highestTIC %>% map(list),
+      spectra_highestTIC_names,
       mz_max_abund,
       mz_max_abund_charge
     ),
@@ -813,7 +942,7 @@ spectra_highestTIC_plots <-
         ..3,
         ..4
       ),
-      ~make_spectrum_top1(
+      ~make_spectrum_top1_v2(
         df = ..1,
         x = mz,
         y = intensity,
@@ -821,7 +950,7 @@ spectra_highestTIC_plots <-
         scan_num = scan,
         charge = ..4,
         xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
-        theme = NULL
+        theme = MStheme01
       )
     )
   )
@@ -849,26 +978,39 @@ tablegrob_list_top1_arranged <-
     .progress = TRUE
   )
 
+# Multi-arranged
+
+tablegrob_list_multi <-
+  spectra_highestTIC_plots %>%
+  unlist(recursive = FALSE) %>%
+  marrangeGrob(
+    grobs = .,
+    ncol = 5,
+    nrow = 3,
+    top = paste0(rawFileName)
+  )
+
 timer$stop("Arrange MS grobs, Top 1 most intense")
 
 # Save arranged MS, Top 1 -------------------------------------------------
 
 timer$start("Save MS, Top 1")
 
-if (dir_exists(paste0("output/XIC_summary/", systime, "/mass_spec/")) == FALSE) {
+if (dir_exists(paste0(saveDir, "mass_spec/")) == FALSE) {
   
-  dir_create(paste0("output/XIC_summary/", systime, "/mass_spec/"))
+  dir_create(paste0(saveDir, "mass_spec/"))
   
 }
+
+{
   
 tablegrob_filenames <-
   names(target_seqs) %>%
   as.list() %>%
   map(
     ~paste(
-      "output/XIC_summary/",
-      systime,
-      "/mass_spec/",
+      saveDir,
+      "mass_spec/",
       fs::path_ext_remove(rawFileName),
       "_",
       .x,
@@ -882,7 +1024,9 @@ tablegrob_heights <-
   map(use_series, "heights") %>%
   map(length)
 
-pwalk(
+}
+
+future_pwalk(
   list(
     tablegrob_filenames,
     tablegrob_list_top1_arranged,
@@ -891,14 +1035,60 @@ pwalk(
   ~ggsave(
     filename = ..1 ,
     plot = ..2,
-    width = outputWidth,
+    width = MSoutputWidth,
     height = ..3 * 3,
-    dpi = outputDPI
+    dpi = MSoutputDPI
   )
+)
+
+# Save potential MS2 scans info
+
+write_csv(
+  potential_MS2_output,
+  paste0(
+    saveDir,
+    fs::path_ext_remove(rawFileName),
+    "_potential_MS2_scans.csv"
+  )
+)
+
+# Multi-arranged
+
+ggsave(
+  filename = paste0(
+    saveDir,
+    fs::path_ext_remove(rawFileName),
+    "_spectrum_zooms.pdf"
+  ),
+  plot = tablegrob_list_multi,
+  width = 20,
+  height = 12,
+  limitsize = FALSE
 )
 
 message("\n\n Done with top 1!")
 
 timer$stop("Save MS, Top 1")
 
-getTimer(timer)
+# Save timer and session info ---------------------------------------------
+
+getTimer(timer) %>% 
+  as_tibble() %>% 
+  mutate(time_elapsed_min = timeElapsed/60) %>% 
+  write_csv(
+    paste0(
+      saveDir,
+      fs::path_ext_remove(rawFileName),
+      "_timers.csv"
+    )
+  )
+
+sessioninfo::session_info() %>%
+  capture.output %>%
+  writeLines(
+    paste0(
+      saveDir,
+      fs::path_ext_remove(rawFileName),
+      "_session_info.txt"
+    )
+  )
