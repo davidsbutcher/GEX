@@ -158,9 +158,12 @@ make_every_XIC <-
 
       if (is.null(top_n_pforms) == TRUE) {
 
-         target_seqs <-
+         target_seqs_df <-
             targetSeqData %>%
-            readr::read_csv() %>%
+            readr::read_csv()
+
+         target_seqs <-
+            target_seqs_df %>%
             dplyr::select(
                tidyselect::any_of(!!target_col_name), !!target_sequence_col_name
             ) %>%
@@ -169,9 +172,12 @@ make_every_XIC <-
 
       } else {
 
-         target_seqs <-
+         target_seqs_df <-
             targetSeqData %>%
-            readr::read_csv() %>%
+            readr::read_csv()
+
+         target_seqs <-
+            target_seqs_df %>%
             dplyr::top_n(top_n_pforms, desc(GlobalQvalue)) %>%
             dplyr::select(
                tidyselect::any_of(!!target_col_name), !!target_sequence_col_name
