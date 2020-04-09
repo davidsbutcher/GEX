@@ -1,0 +1,23 @@
+---
+title: "meXICan Spectrum"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Generate XICs and mass spectra for theoretical charge states of target protein sequences with or without isotopic depletion or carbamidomethylation.
+
+## Installation
+
+Install from GitHub:
+
+```{r, eval = FALSE}
+
+remotes::install_github("davidsbutcher/meXICan-spectrum")
+
+```
+
+## Usage
+
