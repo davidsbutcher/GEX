@@ -50,6 +50,9 @@ make_every_spectrum <-
       top_n_pforms <-
          make_every_XIC_output[[9]]
 
+      PTM_names_list <-
+         make_every_XIC_output[[10]]
+
 
       # Make future workers -----------------------------------------------------
 
@@ -112,8 +115,6 @@ make_every_spectrum <-
                size = "none"
             )
          )
-
-
 
       timer$start("Make MS, Top 1 most intense PART 1")
 
@@ -216,6 +217,8 @@ make_every_spectrum <-
 
       timer$stop("Make MS, Top 1 most intense PART 1")
 
+      ## Maker all MS based on mz of max abundance for each charge state
+
       timer$start("Make MS, Top 1 most intense, PART 2")
 
       spectra_highestTIC_plots <-
@@ -224,14 +227,16 @@ make_every_spectrum <-
                spectra_highestTIC %>% map(list),
                spectra_highestTIC_names,
                mz_max_abund,
-               mz_max_abund_charge
+               mz_max_abund_charge,
+               PTM_names_list
             ),
             ~purrr::pmap(
                list(
                   ..1,
                   ..2,
                   ..3,
-                  ..4
+                  ..4,
+                  ..5
                ),
                ~make_spectrum_top1(
                   df = ..1,
@@ -241,10 +246,72 @@ make_every_spectrum <-
                   scan_num = scan,
                   charge = ..4,
                   xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
+                  ..5,
                   theme = MStheme01
                )
             )
          )
+
+      ## Extract highest TICs from each MS made in the previous step, add
+      ## all charge states together
+
+      results_chargestateTICs <-
+         purrr::map2(
+            spectra_highestTIC %>% map(list),
+            mz_max_abund,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~get_maxY_in_Xrange(
+                  df = .x,
+                  x = mz,
+                  y = intensity,
+                  xrange = c(.y - (mz_window/2), .y + (mz_window/2))
+               )
+            )
+         )
+
+      ## Make table with all charge state TICs
+
+      results_chargestateTICs2 <-
+         purrr::pmap(
+            list(
+               spectra_highestTIC_names,
+               mz_max_abund,
+               mz_max_abund_charge,
+               PTM_names_list,
+               results_chargestateTICs
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3,
+                  ..4,
+                  ..5
+               ),
+               ~tibble::tibble(
+                  name = ..1,
+                  mz_max_abund = ..2,
+                  mz_max_abund_charge = ..3,
+                  PTM_name = ..4,
+                  maxTIC = ..5
+               )
+            )
+         ) %>%
+         purrr::reduce(dplyr::union_all) %>%
+         purrr::reduce(dplyr::union_all) %>%
+         dplyr::distinct()
+
+      results_chargestateTICs_summary <-
+         results_chargestateTICs2 %>%
+         dplyr::group_by(name) %>%
+         dplyr::summarize(
+            charge_states = paste(unique(mz_max_abund_charge), collapse = ", "),
+            PTM_name = PTM_name[[1]],
+            maxTICsum = sum(maxTIC)
+         ) %>%
+         dplyr::arrange(desc(maxTICsum))
 
       timer$stop("Make MS, Top 1 most intense, PART 2")
 
@@ -347,6 +414,21 @@ make_every_spectrum <-
             fs::path_ext_remove(rawFileName),
             "_potential_MS2_scans.csv"
          )
+      )
+
+      # Save max TIC for charge states
+
+      writexl::write_xlsx(
+         list(
+            "Max TIC per CS" = results_chargestateTICs2,
+            "Max TIC summary" = results_chargestateTICs_summary
+         ),
+         paste0(
+            saveDir,
+            fs::path_ext_remove(rawFileName),
+            "_maxTIC_per_CS.xlsx"
+         ),
+         format_headers = TRUE
       )
 
       # Multi-arranged

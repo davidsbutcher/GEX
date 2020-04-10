@@ -6,6 +6,9 @@
 #' @param outputDir
 #' @param target_col_name
 #' @param target_sequence_col_name
+#' @param PTMname_col_name
+#' @param PTMformula_col_name1
+#' @param PTMformula_col_name2
 #' @param use_depleted_isotopes
 #' @param top_n_pforms
 #' @param target_charges
@@ -30,6 +33,9 @@ make_every_XIC <-
       outputDir = getwd(),
       target_col_name = c("UNIPROTKB", "PFR"),
       target_sequence_col_name = c("ProteoformSequence"),
+      PTMname_col_name = c("PTMname"),
+      PTMformula_col_name1 = c("FormulaToAdd"),
+      PTMformula_col_name2 = c("FormulaToSubtract"),
       use_depleted_isotopes = FALSE,
       top_n_pforms = NULL,
       target_charges = c(1:30),
@@ -84,9 +90,18 @@ make_every_XIC <-
          msg = "use_depleted_isotopes should be TRUE or FALSE"
       )
 
+
+      # Create necessary quosures -----------------------------------------------
+
+      target_col_name <- rlang::enquo(target_col_name)
+      target_sequence_col_name <- rlang::enquo(target_sequence_col_name)
+      PTMformula_col_name1 <- rlang::enquo(PTMformula_col_name1)
+      PTMformula_col_name2 <- rlang::enquo(PTMformula_col_name2)
+      PTMname_col_name <- rlang::enquo(PTMname_col_name)
+
       # Check filename and path -------------------------------------------------
 
-      purrr::as_mapper(purrr::reduce)
+      # purrr::as_mapper(purrr::reduce)
 
       rawFilesInDir <-
          fs::dir_ls(
@@ -125,7 +140,7 @@ make_every_XIC <-
                   x = times,
                   y = int_sum,
                   label = glue::glue(
-                     "Max TIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}"),
+                     "Max TIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}\n PTM:{!!PTMname}"),
                   alpha = 0.5,
                   size = 3
                ),
@@ -151,10 +166,30 @@ make_every_XIC <-
          )
 
 
-      # Process target sequences ------------------------------------------------
+      # Load isotopes table -----------------------------------------------------
 
-      target_col_name <- rlang::enquo(target_col_name)
-      target_sequence_col_name <- rlang::enquo(target_sequence_col_name)
+      if (use_depleted_isotopes == FALSE) {
+
+         data(isotopes, package = "enviPat")
+
+         isotopes_to_use <- isotopes
+
+      } else {
+
+         isotopes_to_use <-
+            readr::read_csv(
+               system.file(
+                  "input",
+                  "depleted_isotopes.csv",
+                  package = "meXICanSpectrum"
+               )
+            ) %>%
+            as.data.frame()
+
+      }
+
+
+      # Process target sequences ------------------------------------------------
 
       if (is.null(top_n_pforms) == TRUE) {
 
@@ -174,7 +209,8 @@ make_every_XIC <-
 
          target_seqs_df <-
             targetSeqData %>%
-            readr::read_csv()
+            readr::read_csv() %>%
+            dplyr::top_n(top_n_pforms, desc(GlobalQvalue))
 
          target_seqs <-
             target_seqs_df %>%
@@ -228,6 +264,62 @@ make_every_XIC <-
             collapse = ""
          )
 
+      ## Extract PTM names and make list for later use
+
+      PTM_names_list <-
+         target_seqs_df %>%
+         dplyr::pull(!!PTMname_col_name) %>%
+         as.list()
+
+      PTM_names_list[is.na(PTM_names_list) == TRUE] <- "None"
+
+      ## Make list of PTM formulas to ADD
+
+      PTM_form_to_add <-
+         target_seqs_df %>%
+         dplyr::pull(!!PTMformula_col_name1) %>%
+         as.list()
+
+      PTM_form_to_add[is.na(PTM_form_to_add) == TRUE] <- "C0"
+
+      PTM_form_to_add <-
+         purrr::map(
+            PTM_form_to_add,
+            ~enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = .x) %>%
+               dplyr::pull(new_formula)
+         )
+
+      ## Make list of PTM formulas to SUBTRACT
+
+      PTM_form_to_sub <-
+         target_seqs_df %>%
+         dplyr::pull(!!PTMformula_col_name2) %>%
+         as.list()
+
+      PTM_form_to_sub[is.na(PTM_form_to_sub) == TRUE] <- "C0"
+
+      PTM_form_to_sub <-
+         purrr::map(
+            PTM_form_to_sub,
+            ~enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = .x) %>%
+               dplyr::pull(new_formula)
+         )
+
+      ## Add and subtract PTM formulas as needed
+
+      chemform <-
+         purrr::map2(
+            chemform,
+            PTM_form_to_add,
+            ~enviPat::mergeform(.x, .y)
+         ) %>%
+         purrr::map2(
+            PTM_form_to_sub,
+            ~enviPat::subform(.x, .y)
+         )
+
+      # Add one H per positive charge
+
       H_to_merge <-
          target_charges %>%
          purrr::map_chr(~paste0("H", .x)) %>%
@@ -250,11 +342,11 @@ make_every_XIC <-
       for (i in seq_along(chemform_withH)) {
 
          if (
-            stringr::str_detect(chemform_withH[[i]], stringr::fixed("S0"))
+            any(stringr::str_detect(chemform_withH[[i]], "C0|H0|N0|O0|P0|S0")) == TRUE
          ) {
 
             chemform_withH[[i]] <-
-               stringr::str_remove_all(chemform_withH[[i]], "S0")
+               stringr::str_remove_all(chemform_withH[[i]], "C0|H0|N0|O0|P0|S0")
 
          }
 
@@ -267,30 +359,13 @@ make_every_XIC <-
 
       # Calculate isotopic dist -------------------------------------------------
 
-      if (use_depleted_isotopes == FALSE) {
-
-         data(isotopes, package = "enviPat")
-
-         isotopes_to_use <- isotopes
-
-      } else {
-
-         isotopes_to_use <-
-            readr::read_csv(
-               system.file(
-                  "input",
-                  "depleted_isotopes.csv",
-                  package = "meXICanSpectrum"
-               )
-            ) %>%
-            as.data.frame()
-
-      }
-
-      enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = chemform) %>%
-         dplyr::pull(warning) %>%
-         any() %>%
-         `if`(., stop("Problem with chemical formula"))
+      purrr::map(
+         chemform,
+         ~enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = .x) %>%
+            dplyr::pull(warning) %>%
+            any() %>%
+            `if`(., stop("Problem with chemical formula"))
+      )
 
       iso_dist <-
          purrr::map2(
@@ -330,6 +405,8 @@ make_every_XIC <-
                )
             )
          )
+
+      # Keep the next three chunks separate, doesn't work if they are condensed
 
       iso_dist_list_union <-
          purrr::map(
@@ -384,7 +461,7 @@ make_every_XIC <-
          XIC_nonull %>%
          purrr::modify_depth(2, tibble::as_tibble) %>%
          purrr::modify_depth(2, ~dplyr::select(.x, times, intensities)) %>%
-         purrr::map(reduce, dplyr::full_join, .progress = TRUE)
+         purrr::map(purrr::reduce, dplyr::full_join, .progress = TRUE)
 
       sumXIC2 <-
          sumXIC1 %>%
@@ -445,14 +522,18 @@ make_every_XIC <-
       # Plot XICs ---------------------------------------------------------------
 
       XIC_plots <-
-         sumXIC2 %>%
-         purrr::imap(
+         purrr::pmap(
+            list(
+               sumXIC2,
+               PTM_names_list,
+               names(sumXIC2)
+            ),
             ~make_XIC_plot(
-               .x,
+               ..1,
                times,
                int_sum,
-               .y,
-               XICtheme
+               ..2,
+               ..3
             )
          )
 
@@ -566,7 +647,8 @@ make_every_XIC <-
             saveDir,
             rawFileName,
             target_seqs,
-            top_n_pforms
+            top_n_pforms,
+            PTM_names_list
          )
       )
    }
