@@ -217,43 +217,11 @@ make_every_spectrum <-
 
       timer$stop("Make MS, Top 1 most intense PART 1")
 
-      ## Maker all MS based on mz of max abundance for each charge state
+      ## Extract highest TICs from MS made in the previous step from within a
+      ## narrow window of the theoretical most abundant peak (3.33% of mz_window),
+      ## add all charge states together
 
       timer$start("Make MS, Top 1 most intense, PART 2")
-
-      spectra_highestTIC_plots <-
-         purrr::pmap(
-            list(
-               spectra_highestTIC %>% map(list),
-               spectra_highestTIC_names,
-               mz_max_abund,
-               mz_max_abund_charge,
-               PTM_names_list
-            ),
-            ~purrr::pmap(
-               list(
-                  ..1,
-                  ..2,
-                  ..3,
-                  ..4,
-                  ..5
-               ),
-               ~make_spectrum_top1(
-                  df = ..1,
-                  x = mz,
-                  y = intensity,
-                  accession = ..2,
-                  scan_num = scan,
-                  charge = ..4,
-                  xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
-                  ..5,
-                  theme = MStheme01
-               )
-            )
-         )
-
-      ## Extract highest TICs from each MS made in the previous step, add
-      ## all charge states together
 
       results_chargestateTICs <-
          purrr::map2(
@@ -266,7 +234,7 @@ make_every_spectrum <-
                   df = .x,
                   x = mz,
                   y = intensity,
-                  xrange = c(.y - (mz_window/2), .y + (mz_window/2))
+                  xrange = c(.y - (mz_window/60), .y + (mz_window/60))
                )
             )
          )
@@ -313,28 +281,66 @@ make_every_spectrum <-
          ) %>%
          dplyr::arrange(desc(maxTICsum))
 
+      ## Make all MS based on mz of max abundance for each charge state
+
+      spectra_highestTIC_plots <-
+         purrr::pmap(
+            list(
+               spectra_highestTIC %>% map(list),
+               spectra_highestTIC_names,
+               mz_max_abund,
+               mz_max_abund_charge,
+               PTM_names_list
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3,
+                  ..4,
+                  ..5
+               ),
+               ~make_spectrum_top1(
+                  df = ..1,
+                  x = mz,
+                  y = intensity,
+                  accession = ..2,
+                  scan_num = scan,
+                  charge = ..4,
+                  xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
+                  ..5,
+                  theme = MStheme01
+               )
+            )
+         ) %>%
+         .[results_chargestateTICs_summary %>% dplyr::pull(name)]
+
       timer$stop("Make MS, Top 1 most intense, PART 2")
 
       # Arrange MS Grobs, Top 1 ----------------------------------------------
 
       timer$start("Arrange MS grobs, Top 1 most intense")
 
-      tablegrob_list_top1 <-
-         purrr::map(
-            spectra_highestTIC_plots,
-            ~gridExtra::arrangeGrob(
-               grobs = .x,
-               ncol = 4,
-               top = rawFileName
-            )
-         )
+      if (makePNG == TRUE) {
 
-      tablegrob_list_top1_arranged <-
-         purrr::map(
-            tablegrob_list_top1,
-            ~gridExtra::grid.arrange(.x),
-            .progress = TRUE
-         )
+         tablegrob_list_top1 <-
+            purrr::map(
+               spectra_highestTIC_plots,
+               ~gridExtra::arrangeGrob(
+                  grobs = .x,
+                  ncol = 4,
+                  top = rawFileName
+               )
+            )
+
+         tablegrob_list_top1_arranged <-
+            purrr::map(
+               tablegrob_list_top1,
+               ~gridExtra::grid.arrange(.x),
+               .progress = TRUE
+            )
+
+      }
 
       # Multi-arranged
 
@@ -352,7 +358,7 @@ make_every_spectrum <-
 
       # Save arranged MS, Top 1 -------------------------------------------------
 
-      {
+      if (makePNG == TRUE) {
 
          tablegrob_filenames <-
             names(target_seqs) %>%
@@ -420,8 +426,8 @@ make_every_spectrum <-
 
       writexl::write_xlsx(
          list(
-            "Max TIC per CS" = results_chargestateTICs2,
-            "Max TIC summary" = results_chargestateTICs_summary
+            "TIC per CS" = results_chargestateTICs2,
+            "TIC summary" = results_chargestateTICs_summary
          ),
          paste0(
             saveDir,

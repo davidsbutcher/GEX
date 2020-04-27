@@ -11,6 +11,7 @@
 #' @param PTMformula_col_name2
 #' @param use_depleted_isotopes
 #' @param top_n_pforms
+#' @param mass_range
 #' @param target_charges
 #' @param mz_range
 #' @param XIC_tol
@@ -38,6 +39,7 @@ make_every_XIC <-
       PTMformula_col_name2 = c("FormulaToSubtract"),
       use_depleted_isotopes = FALSE,
       top_n_pforms = NULL,
+      mass_range = c(0,50000),
       target_charges = c(1:30),
       mz_range = c(600,2000),
       XIC_tol = 25,
@@ -94,6 +96,7 @@ make_every_XIC <-
       # Create necessary quosures -----------------------------------------------
 
       target_col_name <- rlang::enquo(target_col_name)
+      target_sequence_col_name_sym <- rlang::sym(target_sequence_col_name)
       target_sequence_col_name <- rlang::enquo(target_sequence_col_name)
       PTMformula_col_name1 <- rlang::enquo(PTMformula_col_name1)
       PTMformula_col_name2 <- rlang::enquo(PTMformula_col_name2)
@@ -195,7 +198,16 @@ make_every_XIC <-
 
          target_seqs_df <-
             targetSeqData %>%
-            readr::read_csv()
+            readr::read_csv() %>%
+            dplyr::mutate(
+               MonoisoMass =
+                  Peptides::mw(!!target_sequence_col_name_sym, monoisotopic = TRUE)
+            ) %>%
+            dplyr::filter(
+               MonoisoMass >= mass_range[[1]],
+               MonoisoMass <= mass_range[[2]]
+            )
+
 
          target_seqs <-
             target_seqs_df %>%
@@ -210,11 +222,18 @@ make_every_XIC <-
          target_seqs_df <-
             targetSeqData %>%
             readr::read_csv() %>%
-            dplyr::top_n(top_n_pforms, desc(GlobalQvalue))
+            dplyr::top_n(top_n_pforms, desc(GlobalQvalue)) %>%
+            dplyr::mutate(
+               MonoisoMass =
+                  Peptides::mw(!!target_sequence_col_name_sym, monoisotopic = TRUE)
+            ) %>%
+            dplyr::filter(
+               MonoisoMass >= mass_range[[1]],
+               MonoisoMass <= mass_range[[2]]
+            )
 
          target_seqs <-
             target_seqs_df %>%
-            dplyr::top_n(top_n_pforms, desc(GlobalQvalue)) %>%
             dplyr::select(
                tidyselect::any_of(!!target_col_name), !!target_sequence_col_name
             ) %>%
@@ -367,6 +386,25 @@ make_every_XIC <-
             `if`(., stop("Problem with chemical formula"))
       )
 
+      # iso_dist <-
+      #    purrr::map2(
+      #       chemform_withH,
+      #       list(target_charges) %>% rep(length(target_seqs)),
+      #       ~purrr::map2(
+      #          .x,
+      #          .y,
+      #          ~enviPat::isopattern(
+      #             isotopes_to_use,
+      #             chemform=.x,
+      #             threshold=0.1,
+      #             plotit=FALSE,
+      #             charge=.y,
+      #             emass=0.00054858,
+      #             algo=1
+      #          )
+      #       )
+      #    )
+
       iso_dist <-
          purrr::map2(
             chemform_withH,
@@ -382,7 +420,15 @@ make_every_XIC <-
                   charge=.y,
                   emass=0.00054858,
                   algo=1
-               )
+               ) %>%
+                  purrr::modify_depth(1, tibble::as_tibble) %>%
+                  purrr::map(
+                     ~dplyr::filter(
+                        .x,
+                        `m/z` >= mz_range[[1]],
+                        `m/z` <= mz_range[[2]]
+                     )
+                  )
             )
          )
 
@@ -405,6 +451,8 @@ make_every_XIC <-
                )
             )
          )
+
+      rm(iso_dist)
 
       # Keep the next three chunks separate, doesn't work if they are condensed
 
@@ -572,6 +620,7 @@ make_every_XIC <-
          saveDir <-
             paste0(
                outputDir,
+               "/",
                systime,
                "_",
                fs::path_ext_remove(rawFileName),
@@ -595,6 +644,16 @@ make_every_XIC <-
       # Save spreadsheet data
 
       readr::write_csv(
+         target_seqs_df,
+         path =
+            paste0(
+               saveDir,
+               fs::path_ext_remove(rawFileName),
+               "_target_seqs.csv"
+            )
+      )
+
+      readr::write_csv(
          sumXIC_summary,
          path =
             paste0(
@@ -610,12 +669,12 @@ make_every_XIC <-
       ) %>%
          purrr::reduce(dplyr::union_all) %>%
          dplyr::select(accession, tidyr::everything()) %>%
-         writexl::write_xlsx(
+         readr::write_csv(
             path =
                paste0(
                   saveDir,
                   fs::path_ext_remove(rawFileName),
-                  "_isotopic_dist.xlsx"
+                  "_isotopic_dist.csv"
                )
          )
 
