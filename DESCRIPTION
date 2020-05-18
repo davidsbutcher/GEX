@@ -1,14 +1,14 @@
-Package: meXICanSpectrum
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Package: GEX
+Title: Generate XICs and MS for a set of search sequences
+Version: 0.0.1.0
 Authors@R: 
-    person(given = "First",
-           family = "Last",
+    person(given = "David",
+           family = "Butcher",
            role = c("aut", "cre"),
-           email = "first.last@example.com",
+           email = "dbutcher@magnet.fsu.edu",
            comment = c(ORCID = "YOUR-ORCID-ID"))
 Description: What the package does (one paragraph).
-License: What license it uses
+License: CC0
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.0
