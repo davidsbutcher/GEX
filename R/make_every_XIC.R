@@ -32,7 +32,7 @@ make_every_XIC <-
       rawFileName = NULL,
       targetSeqData = NULL,
       outputDir = getwd(),
-      target_col_name = c("UNIPROTKB", "PFR"),
+      target_col_name = c("UNIPROTKB"),
       target_sequence_col_name = c("ProteoformSequence"),
       PTMname_col_name = c("PTMname"),
       PTMformula_col_name1 = c("FormulaToAdd"),
@@ -212,7 +212,7 @@ make_every_XIC <-
          target_seqs <-
             target_seqs_df %>%
             dplyr::select(
-               tidyselect::any_of(!!target_col_name), !!target_sequence_col_name
+               !!target_col_name, !!target_sequence_col_name
             ) %>%
             tibble::deframe() %>%
             as.list()
@@ -235,7 +235,7 @@ make_every_XIC <-
          target_seqs <-
             target_seqs_df %>%
             dplyr::select(
-               tidyselect::any_of(!!target_col_name), !!target_sequence_col_name
+               !!target_col_name, !!target_sequence_col_name
             ) %>%
             tibble::deframe() %>%
             as.list()
@@ -287,7 +287,8 @@ make_every_XIC <-
 
       PTM_names_list <-
          target_seqs_df %>%
-         dplyr::pull(!!PTMname_col_name) %>%
+         dplyr::select(!!target_col_name, !!PTMname_col_name) %>%
+         tibble::deframe() %>%
          as.list()
 
       PTM_names_list[is.na(PTM_names_list) == TRUE] <- "None"
@@ -452,7 +453,7 @@ make_every_XIC <-
             )
          )
 
-      rm(iso_dist)
+      # rm(iso_dist)
 
       # Keep the next three chunks separate, doesn't work if they are condensed
 
@@ -462,6 +463,11 @@ make_every_XIC <-
             purrr::reduce,
             dplyr::union_all
          )
+
+      # Save this for later use in making spectra
+
+      iso_dist_vlines <-
+         iso_dist_list_union
 
       iso_dist_list_union <-
          purrr::map(
@@ -505,11 +511,15 @@ make_every_XIC <-
          XIC %>%
          purrr::map(kickoutXIC)
 
+      # SAVE SPACE BY DELETING XICS!
+
+      rm(XIC)
+
       sumXIC1 <-
          XIC_nonull %>%
          purrr::modify_depth(2, tibble::as_tibble) %>%
          purrr::modify_depth(2, ~dplyr::select(.x, times, intensities)) %>%
-         purrr::map(purrr::reduce, dplyr::full_join, .progress = TRUE)
+         purrr::map(purrr::reduce, dplyr::full_join)
 
       sumXIC2 <-
          sumXIC1 %>%
@@ -539,6 +549,7 @@ make_every_XIC <-
          rawFileMetadata %>%
          dplyr::select(scanNumber, StartTime)
 
+
       scanNumsToRead <-
          purrr::map(
             RT_of_maxTIC,
@@ -565,7 +576,27 @@ make_every_XIC <-
          dplyr::mutate(seq_name = names(target_seqs)) %>%
          dplyr::mutate(RT_of_maxTIC = unlist(RT_of_maxTIC)) %>%
          dplyr::mutate(scan_of_maxTIC = unlist(scanNumsToRead)) %>%
-         dplyr::select(seq_name, Sequence, chem_form, max_TIC, tidyr::everything())
+         dplyr::select(seq_name, Sequence, chem_form, max_TIC, tidyr::everything()) %>%
+         dplyr::arrange(dplyr::desc(max_TIC))
+
+      # Arrange XICs to go in order of decreasing intensity
+
+      sumXIC2 <-
+         sumXIC2 %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+
+      PTM_names_list <-
+         PTM_names_list %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+      iso_dist_list_union <-
+         iso_dist_list_union %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+      scanNumsToRead <-
+         scanNumsToRead %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
       # Plot XICs ---------------------------------------------------------------
 
@@ -707,7 +738,9 @@ make_every_XIC <-
             rawFileName,
             target_seqs,
             top_n_pforms,
-            PTM_names_list
+            PTM_names_list,
+            sumXIC_summary,
+            iso_dist_vlines
          )
       )
    }

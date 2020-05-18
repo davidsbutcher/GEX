@@ -56,8 +56,17 @@ make_XIC_plot = function(df, x, y, PTMname, seq_name) {
 
 
 make_spectrum_top1 =
-   function(df, x, y, accession = "NA", scan_num = 0, charge = 0, xrange = c(0,0), PTMname = NULL, theme  = NULL) {
-
+   function(
+      df, x,
+      y,
+      accession = "NA",
+      scan_num = 0,
+      charge = 0,
+      xrange = c(0,0),
+      PTMname = NULL,
+      vlines = NULL,
+      theme  = NULL
+   ) {
       {
          xmin <-
             df %>%
@@ -114,9 +123,37 @@ make_spectrum_top1 =
          ggplot2::geom_vline(
             ggplot2::aes(
                xintercept = xrange[[1]]+((xrange[[2]]-xrange[[1]])/2),
-               color = "red", alpha = 0.5
+               color = "blue",
+               alpha = 0.5
             )
          ) +
+         # ggplot2::geom_vline(
+         #    data = vlines,
+         #    ggplot2::aes(
+         #       xintercept = `m/z`,
+         #       color = "red",
+         #       alpha = 0.5,
+         #       linetype = "longdash"
+         #    )
+         # ) +
+         ggplot2::annotate(
+            "segment",
+            x = vlines,
+            xend = vlines,
+            y = 0,
+            yend = ymax,
+            color = "red",
+            alpha = 0.5,
+            linetype = "longdash"
+         ) +
+         # ggplot2::annotate(
+         #    "vline",
+         #    x = vlines,
+         #    xintercept = vlines,
+         #    color = "red",
+         #    alpha = 0.5,
+         #    linetype = "longdash"
+         # ) +
          ggplot2::annotate(
             "text",
             x = xrange[[2]],
@@ -153,5 +190,47 @@ get_maxY_in_Xrange <-
          dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
          dplyr::filter({{y}} == max({{y}})) %>%
          dplyr::pull({{y}})
+
+   }
+
+ggplot_list_checker <-
+   function(
+      ggplot_list
+   ) {
+
+      # Checks a list of ggplot objects for "blank" plots and removes them
+
+      for (i in rev(seq_along(ggplot_list))) {
+
+         if ((ggplot_list[[i]] %>% .$data %>% nrow()) == 0) {
+
+            ggplot_list[[i]] <- NULL
+
+         }
+
+      }
+
+      return(ggplot_list)
+
+   }
+
+tibble_list_checker <-
+   function(
+      tibble_list
+   ) {
+
+      # Checks a list of ggplot objects for "blank" plots and removes them
+
+      for (i in rev(seq_along(tibble_list))) {
+
+         if (tibble_list[[i]] %>% dplyr::pull(`m/z`) %>% length() == 0) {
+
+            tibble_list[[i]] <- NULL
+
+         }
+
+      }
+
+      return(tibble_list)
 
    }

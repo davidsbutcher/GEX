@@ -15,7 +15,7 @@
 make_every_spectrum <-
    function(
       make_every_XIC_output,
-      mz_window = 4,
+      mz_window = 3,
       MSoutputWidth = 18,
       MSoutputDPI = 200,
       makePNG = FALSE
@@ -52,6 +52,12 @@ make_every_spectrum <-
 
       PTM_names_list <-
          make_every_XIC_output[[10]]
+
+      sumXIC_summary <-
+         make_every_XIC_output[[11]]
+
+      iso_dist_vlines <-
+         make_every_XIC_output[[12]]
 
 
       # Make future workers -----------------------------------------------------
@@ -116,6 +122,12 @@ make_every_spectrum <-
             )
          )
 
+
+
+      # Analyze data ------------------------------------------------------------
+
+
+
       timer$start("Make MS, Top 1 most intense PART 1")
 
       scansToPlot <-
@@ -135,7 +147,8 @@ make_every_spectrum <-
                scan = .x[[1]]$scan,
                mz = .x[[1]]$mZ,
                intensity = .x[[1]]$intensity)
-         )
+         ) %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
       mz_max_abund <-
          iso_dist_list_union %>%
@@ -145,7 +158,8 @@ make_every_spectrum <-
          purrr::map(
             ~dplyr::pull(.x, `m/z`)
          ) %>%
-         purrr::map(as.list)
+         purrr::map(as.list) %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
       mz_max_abund_charge <-
          iso_dist_list_union %>%
@@ -155,16 +169,75 @@ make_every_spectrum <-
          purrr::map(
             ~dplyr::pull(.x, charge)
          ) %>%
-         purrr::map(as.list)
+         purrr::map(as.list) %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+      iso_dist_vlines2 <-
+         iso_dist_vlines %>%
+         purrr::map(
+            tibble_list_checker
+         ) %>%
+         purrr::modify_depth(
+            2,
+            ~dplyr::filter(
+               .x,
+               abundance != 100
+            ) %>%
+               dplyr::mutate(`m/z_round` = round(`m/z`, digits = 1)) %>%
+               dplyr::distinct(`m/z_round`, .keep_all = TRUE) %>%
+               dplyr::top_n(10, abundance)
+         ) %>%
+         purrr::modify_depth(
+            2,
+            ~dplyr::pull(.x, `m/z`)
+         ) %>%
+         purrr::map(as.list) %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+
+      ## ADDITIONAL PROCESSING OF ISO_DIST_VLINES2
+      ## Lengths of list elements in iso_dist_vlines2 occasionally don't match other arguments to the pmap
+      ## call that generates spectra_highestTIC_plots. This makes iso_dist_vlines2 match mz_max_abund
+
+      for (i in seq_along(iso_dist_vlines2)) {
+
+         for (j in rev(seq_along(iso_dist_vlines2[[i]]))) {
+
+            if (length(iso_dist_vlines2[[i]][[j]]) == 0) {
+
+               iso_dist_vlines2[[i]][[j]] <- NULL
+
+            }
+
+         }
+
+      }
+
+      for (i in seq_along(iso_dist_vlines2)) {
+
+         if (length(iso_dist_vlines2[[i]]) > length(mz_max_abund[[i]])) {
+
+            iso_dist_vlines2[[i]] <-
+               iso_dist_vlines2[1:length(mz_max_abund[[i]])]
+
+         } else if (length(iso_dist_vlines2[[i]]) < length(mz_max_abund[[i]])) {
+
+            while (length(iso_dist_vlines2[[i]]) != length(mz_max_abund[[i]])) {
+
+               iso_dist_vlines2[[i]] <-
+                  append(iso_dist_vlines2[[i]], 0)
+
+            }
+
+         }
+
+      }
+
 
       spectra_highestTIC_names <-
          spectra_highestTIC %>%
          names() %>%
-         purrr::map(list) %>%
-         purrr::map2(
-            mz_max_abund,
-            ~rep(.x, length(.y))
-         )
+         as.list()
 
       # Find potential MS2 scans
 
@@ -183,7 +256,7 @@ make_every_spectrum <-
                ~{
                   dplyr::filter(
                      rawFileMetadataMS2,
-                     isoWindowLow < .x & isoWindowHigh > .x
+                     .x > isoWindowLow & .x < isoWindowHigh
                   ) %>%
                      dplyr::arrange(dplyr::desc(TIC)) %>%
                      dplyr::pull(scanNumber) %>%
@@ -225,7 +298,7 @@ make_every_spectrum <-
 
       results_chargestateTICs <-
          purrr::map2(
-            spectra_highestTIC %>% map(list),
+            spectra_highestTIC %>% purrr::map(list),
             mz_max_abund,
             ~purrr::map2(
                .x,
@@ -286,11 +359,12 @@ make_every_spectrum <-
       spectra_highestTIC_plots <-
          purrr::pmap(
             list(
-               spectra_highestTIC %>% map(list),
+               spectra_highestTIC %>% purrr::map(list),
                spectra_highestTIC_names,
                mz_max_abund,
                mz_max_abund_charge,
-               PTM_names_list
+               PTM_names_list,
+               iso_dist_vlines2
             ),
             ~purrr::pmap(
                list(
@@ -298,7 +372,8 @@ make_every_spectrum <-
                   ..2,
                   ..3,
                   ..4,
-                  ..5
+                  ..5,
+                  ..6
                ),
                ~make_spectrum_top1(
                   df = ..1,
@@ -309,11 +384,17 @@ make_every_spectrum <-
                   charge = ..4,
                   xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
                   ..5,
+                  vlines = ..6,
                   theme = MStheme01
                )
             )
          ) %>%
-         .[results_chargestateTICs_summary %>% dplyr::pull(name)]
+         .[sumXIC_summary %>% dplyr::pull(seq_name)] %>%
+         purrr::map(
+            ~ggplot_list_checker(.x)
+         )
+
+
 
       timer$stop("Make MS, Top 1 most intense, PART 2")
 
@@ -343,6 +424,10 @@ make_every_spectrum <-
       }
 
       # Multi-arranged
+
+      spectra_highestTIC_plots <<- spectra_highestTIC_plots
+
+      rawFileName <<- rawFileName
 
       tablegrob_list_multi <-
          spectra_highestTIC_plots %>%
@@ -456,6 +541,17 @@ make_every_spectrum <-
       message("\n\n make_every_spectrum done")
 
       timer$stop("Save MS, Top 1, PDF")
+
+
+      # readr::write_lines(
+      #    timer %>%  tibble::as_tibble(),
+      #    paste0(
+      #       saveDir,
+      #       fs::path_ext_remove(rawFileName),
+      #       "_GEX_timer.txt"
+      #    )
+      # )
+
 
       return(
          timeR::getTimer(timer)

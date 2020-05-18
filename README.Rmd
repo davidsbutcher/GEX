@@ -1,5 +1,5 @@
 ---
-title: "meXICan Spectrum"
+title: "GEX"
 output: github_document
 ---
 

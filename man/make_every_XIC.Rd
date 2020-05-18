@@ -9,7 +9,7 @@ make_every_XIC(
   rawFileName = NULL,
   targetSeqData = NULL,
   outputDir = getwd(),
-  target_col_name = c("UNIPROTKB", "PFR"),
+  target_col_name = c("UNIPROTKB"),
   target_sequence_col_name = c("ProteoformSequence"),
   PTMname_col_name = c("PTMname"),
   PTMformula_col_name1 = c("FormulaToAdd"),
