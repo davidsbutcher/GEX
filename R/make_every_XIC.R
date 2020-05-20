@@ -39,16 +39,16 @@ make_every_XIC <-
       PTMformula_col_name2 = c("FormulaToSubtract"),
       use_depleted_isotopes = FALSE,
       top_n_pforms = NULL,
-      mass_range = c(0,50000),
-      target_charges = c(1:30),
+      mass_range = c(0,100000),
+      target_charges = c(1:50),
       mz_range = c(600,2000),
-      XIC_tol = 25,
+      XIC_tol = 2,
       use_IAA = FALSE,
       abund_cutoff = 5
    ) {
 
-      library(purrr)
-      library(magrittr)
+      # library(purrr)
+      # library(magrittr)
       library(rawDiag)
 
       # Assertions --------------------------------------------------------------
@@ -176,6 +176,8 @@ make_every_XIC <-
          data(isotopes, package = "enviPat")
 
          isotopes_to_use <- isotopes
+
+         rm(isotopes)
 
       } else {
 

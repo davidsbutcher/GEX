@@ -119,12 +119,15 @@ make_spectrum_top1 =
       df %>%
          dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
          ggplot2::ggplot(ggplot2::aes({{x}}, {{y}})) +
-         ggplot2::geom_line() +
+         ggplot2::geom_line(
+            ggplot2::aes(size = 0.5)
+         ) +
          ggplot2::geom_vline(
             ggplot2::aes(
                xintercept = xrange[[1]]+((xrange[[2]]-xrange[[1]])/2),
-               color = "blue",
-               alpha = 0.5
+               color = "red",
+               alpha = 0.5,
+               size = 0.5
             )
          ) +
          # ggplot2::geom_vline(
@@ -144,6 +147,7 @@ make_spectrum_top1 =
             yend = ymax,
             color = "red",
             alpha = 0.5,
+            size = 0.5,
             linetype = "longdash"
          ) +
          # ggplot2::annotate(
@@ -177,6 +181,7 @@ make_spectrum_top1 =
             x = "m/z",
             y = "Intensity"
          ) +
+         ggplot2::scale_size_identity() +
          theme
 
    }

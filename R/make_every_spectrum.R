@@ -183,8 +183,8 @@ make_every_spectrum <-
                .x,
                abundance != 100
             ) %>%
-               dplyr::mutate(`m/z_round` = round(`m/z`, digits = 1)) %>%
-               dplyr::distinct(`m/z_round`, .keep_all = TRUE) %>%
+               # dplyr::mutate(`m/z_round` = round(`m/z`, digits = 1)) %>%
+               # dplyr::distinct(`m/z_round`, .keep_all = TRUE) %>%
                dplyr::top_n(10, abundance)
          ) %>%
          purrr::modify_depth(
