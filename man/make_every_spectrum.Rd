@@ -6,7 +6,7 @@
 \usage{
 make_every_spectrum(
   make_every_XIC_output,
-  mz_window = 4,
+  mz_window = 3,
   MSoutputWidth = 18,
   MSoutputDPI = 200,
   makePNG = FALSE

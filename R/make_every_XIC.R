@@ -10,7 +10,7 @@
 #' @param PTMformula_col_name1
 #' @param PTMformula_col_name2
 #' @param use_depleted_isotopes
-#' @param top_n_pforms
+#' @param sample_n_pforms
 #' @param mass_range
 #' @param target_charges
 #' @param mz_range
@@ -38,7 +38,7 @@ make_every_XIC <-
       PTMformula_col_name1 = c("FormulaToAdd"),
       PTMformula_col_name2 = c("FormulaToSubtract"),
       use_depleted_isotopes = FALSE,
-      top_n_pforms = NULL,
+      sample_n_pforms = NULL,
       mass_range = c(0,100000),
       target_charges = c(1:50),
       mz_range = c(600,2000),
@@ -92,6 +92,14 @@ make_every_XIC <-
          msg = "use_depleted_isotopes should be TRUE or FALSE"
       )
 
+      if (is.null(sample_n_pforms) == FALSE) {
+
+         assertthat::assert_that(
+            assertthat::is.count(sample_n_pforms),
+            msg = "sample_n_pforms should be a positive integer"
+         )
+
+      }
 
       # Create necessary quosures -----------------------------------------------
 
@@ -177,8 +185,6 @@ make_every_XIC <-
 
          isotopes_to_use <- isotopes
 
-         rm(isotopes)
-
       } else {
 
          isotopes_to_use <-
@@ -196,7 +202,7 @@ make_every_XIC <-
 
       # Process target sequences ------------------------------------------------
 
-      if (is.null(top_n_pforms) == TRUE) {
+      if (is.null(sample_n_pforms) == TRUE) {
 
          target_seqs_df <-
             targetSeqData %>%
@@ -224,7 +230,6 @@ make_every_XIC <-
          target_seqs_df <-
             targetSeqData %>%
             readr::read_csv() %>%
-            dplyr::top_n(top_n_pforms, desc(GlobalQvalue)) %>%
             dplyr::mutate(
                MonoisoMass =
                   Peptides::mw(!!target_sequence_col_name_sym, monoisotopic = TRUE)
@@ -232,7 +237,8 @@ make_every_XIC <-
             dplyr::filter(
                MonoisoMass >= mass_range[[1]],
                MonoisoMass <= mass_range[[2]]
-            )
+            ) %>%
+            dplyr::sample_n(size = sample_n_pforms)
 
          target_seqs <-
             target_seqs_df %>%
@@ -739,7 +745,7 @@ make_every_XIC <-
             saveDir,
             rawFileName,
             target_seqs,
-            top_n_pforms,
+            sample_n_pforms,
             PTM_names_list,
             sumXIC_summary,
             iso_dist_vlines

@@ -47,7 +47,7 @@ make_every_spectrum <-
       target_seqs <-
          make_every_XIC_output[[8]]
 
-      top_n_pforms <-
+      sample_n_pforms <-
          make_every_XIC_output[[9]]
 
       PTM_names_list <-
@@ -66,13 +66,13 @@ make_every_spectrum <-
 
          timer$start("Make future workers")
 
-         if (is.null(top_n_pforms) == FALSE) {
+         if (is.null(sample_n_pforms) == FALSE) {
 
-            if (top_n_pforms < 10) {
+            if (sample_n_pforms < 10) {
 
                future::plan(
                   future::multisession(
-                     workers = as.integer(top_n_pforms),
+                     workers = as.integer(sample_n_pforms),
                      gc = TRUE,
                      persistent = FALSE
                   )
@@ -80,7 +80,7 @@ make_every_spectrum <-
 
             }
 
-            if (top_n_pforms >= 10) {
+            if (sample_n_pforms >= 10) {
 
                future::plan(
                   future::multisession(
