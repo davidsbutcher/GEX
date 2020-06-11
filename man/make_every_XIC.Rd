@@ -15,11 +15,11 @@ make_every_XIC(
   PTMformula_col_name1 = c("FormulaToAdd"),
   PTMformula_col_name2 = c("FormulaToSubtract"),
   use_depleted_isotopes = FALSE,
-  top_n_pforms = NULL,
-  mass_range = c(0, 50000),
-  target_charges = c(1:30),
+  sample_n_pforms = NULL,
+  mass_range = c(0, 1e+05),
+  target_charges = c(1:50),
   mz_range = c(600, 2000),
-  XIC_tol = 25,
+  XIC_tol = 2,
   use_IAA = FALSE,
   abund_cutoff = 5
 )
