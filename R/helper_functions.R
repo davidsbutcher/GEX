@@ -36,7 +36,7 @@ make_XIC_plot = function(df, x, y, PTMname, seq_name) {
             label = glue::glue(
                "Max TIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}\n PTM: {stringr::str_wrap(PTMname, width = 10)}"),
             alpha = 0.5,
-            size = 3
+            size = 2
          ),
          vjust="inward",
          hjust="inward",
@@ -57,14 +57,21 @@ make_XIC_plot = function(df, x, y, PTMname, seq_name) {
 
 make_spectrum_top1 =
    function(
-      df, x,
+      df,
+      x,
       y,
+      noise,
       accession = "NA",
       scan_num = 0,
       charge = 0,
       xrange = c(0,0),
       PTMname = NULL,
       vlines = NULL,
+      chargestateTIC = NULL,
+      cosine_sims = NULL,
+      mz_all_abund = NULL,
+      iso_abund_theoretical_scaled = NULL,
+      spectral_contrast_angles = NULL,
       theme  = NULL
    ) {
       {
@@ -97,6 +104,15 @@ make_spectrum_top1 =
             dplyr::pull({{y}}) %>%
             magrittr::extract(1)
 
+         # ymax <-
+         #    chargestateTIC
+
+         if (length(ymax) > 1) {
+
+            ymax <- ymax[[1]]
+
+         }
+
          if (length(ymax) == 0) {
 
             ymax <- 10
@@ -114,31 +130,52 @@ make_spectrum_top1 =
             dplyr::pull({{scan_num}}) %>%
             .[[1]]
 
+         mean_noise <-
+            df %>%
+            dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
+            dplyr::pull({{noise}}) %>%
+            mean()
+
       }
+
+      theo_points <-
+         iso_abund_theoretical_scaled %>%
+         purrr::set_names(mz_all_abund) %>%
+         tibble::enframe(name = "mz", value = "intensity") %>%
+         dplyr::mutate(mz = as.double(mz))
 
       df %>%
          dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
          ggplot2::ggplot(ggplot2::aes({{x}}, {{y}})) +
          ggplot2::geom_line(
-            ggplot2::aes(size = 0.5)
+            ggplot2::aes(size = 0.35)
          ) +
-         ggplot2::geom_vline(
+         ggplot2::geom_point(
+            data = theo_points,
+            mapping = ggplot2::aes(x = mz, y = intensity),
+            color = "red",
+            shape = 1,
+            size = 2.5,
+            alpha = 0.5
+         ) +
+         ggplot2::annotate(
+            "rect",
+            xmin = mean(xrange)-((xrange[[2]]-xrange[[1]])*0.002),
+            xmax = mean(xrange)+((xrange[[2]]-xrange[[1]])*0.002),
+            ymin = 0,
+            ymax = ymax,
+            fill = "red",
+            alpha = 0.5,
+            linetype = "blank"
+         ) +
+         ggplot2::geom_hline(
             ggplot2::aes(
-               xintercept = xrange[[1]]+((xrange[[2]]-xrange[[1]])/2),
-               color = "red",
+               yintercept = noise,
                alpha = 0.5,
-               size = 0.5
-            )
+               size = 0.25
+            ),
+            color = "blue"
          ) +
-         # ggplot2::geom_vline(
-         #    data = vlines,
-         #    ggplot2::aes(
-         #       xintercept = `m/z`,
-         #       color = "red",
-         #       alpha = 0.5,
-         #       linetype = "longdash"
-         #    )
-         # ) +
          ggplot2::annotate(
             "segment",
             x = vlines,
@@ -146,26 +183,18 @@ make_spectrum_top1 =
             y = 0,
             yend = ymax,
             color = "red",
-            alpha = 0.5,
-            size = 0.5,
+            alpha = 0.35,
+            size = 0.25,
             linetype = "longdash"
          ) +
-         # ggplot2::annotate(
-         #    "vline",
-         #    x = vlines,
-         #    xintercept = vlines,
-         #    color = "red",
-         #    alpha = 0.5,
-         #    linetype = "longdash"
-         # ) +
          ggplot2::annotate(
             "text",
             x = xrange[[2]],
             y = ymax,
-            label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Max TIC: {format(ymax, scientific = TRUE, nsmall = 4, digits = 4)}\n PTM: {PTMname}"),
+            label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\n SCA: {round((spectral_contrast_angles), digits = 3)} \nPTM: {PTMname}"),
             vjust="inward",
             hjust="inward",
-            size = 3,
+            size = 2,
             alpha = 0.5
          ) +
          ggplot2::lims(
@@ -195,6 +224,64 @@ get_maxY_in_Xrange <-
          dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
          dplyr::filter({{y}} == max({{y}})) %>%
          dplyr::pull({{y}})
+
+   }
+
+get_maxY_in_Xrange_vector <-
+   function(
+      df, x, y, mz = 0, mz_window, mz_window_scaling
+   ) {
+
+      out <- vector(mode = "numeric", length = length(mz))
+
+      for (i in seq_along(mz)) {
+
+         xrange <-
+            c(
+               mz[[i]] - (mz_window*mz_window_scaling),
+               mz[[i]] + (mz_window*mz_window_scaling)
+            )
+
+         out[[i]] <-
+            df %>%
+            dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
+            dplyr::filter({{y}} == max({{y}})) %>%
+            dplyr::pull({{y}}) %>%
+            {if (length(.) == 0) 0 else .} %>%
+            {if (length(.) > 1) 0 else .}
+
+      }
+
+      return(out)
+
+   }
+
+get_maxX_in_Xrange_vector <-
+   function(
+      df, x, y, mz = 0, mz_window, mz_window_scaling
+   ) {
+
+      out <- vector(mode = "numeric", length = length(mz))
+
+      for (i in seq_along(mz)) {
+
+         xrange <-
+            c(
+               mz[[i]] - (mz_window*mz_window_scaling),
+               mz[[i]] + (mz_window*mz_window_scaling)
+            )
+
+         out[[i]] <-
+            df %>%
+            dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
+            dplyr::filter({{y}} == max({{y}})) %>%
+            dplyr::pull({{x}}) %>%
+            {if (length(.) == 0) 0 else .} %>%
+            {if (length(.) > 1) 0 else .}
+
+      }
+
+      return(out)
 
    }
 
