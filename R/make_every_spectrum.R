@@ -1,9 +1,13 @@
 #' make_every_spectrum
 #'
-#' @param make_every_XIC_output
-#' @param mz_window
-#' @param MSoutputWidth
-#' @param MSoutputDPI
+#' @param make_every_XIC_output Direct output from make_every_XIC.
+#' @param mz_window Width of the m/z window to be used to make mini spectra.
+#' @param mz_window_scaling Scaling factor for window for determination of intensity
+#' for individual isotopologue peaks. Multiplied by mz_window value.
+#' @param MSoutputWidth Width of png output. Only used is makePNG is TRUE.
+#' @param MSoutputDPI DPI of png output. Only used is makePNG is TRUE.
+#' @param makePNG Whether to make png output. Probably deprecated soon.
+#' @param return_timers Controls whether timers or spectra are returned.
 #'
 #' @importFrom magrittr %>%
 #'
@@ -16,9 +20,11 @@ make_every_spectrum <-
    function(
       make_every_XIC_output,
       mz_window = 3,
+      mz_window_scaling = 0.002,
       MSoutputWidth = 18,
       MSoutputDPI = 200,
-      makePNG = FALSE
+      makePNG = FALSE,
+      return_timers = TRUE
    ) {
 
       library(rawDiag)
@@ -127,7 +133,6 @@ make_every_spectrum <-
       # Analyze data ------------------------------------------------------------
 
 
-
       timer$start("Make MS, Top 1 most intense PART 1")
 
       scansToPlot <-
@@ -150,10 +155,48 @@ make_every_spectrum <-
          ) %>%
          .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
+      # Estimate noise for all spectra using MALDIquant::estimateNoise
+
+      spectra_noiseEstimates <-
+         spectra_highestTIC %>%
+         purrr::map(
+            ~MALDIquant::createMassSpectrum(
+               mass = .x$mz,
+               intensity = .x$intensity,
+               metaData = list(name = .x$UNIPROTKB[[1]])
+            ) %>%
+               MALDIquant::estimateNoise(method = "MAD") %>%
+               .[,2]
+         )
+
+      # Add noise estimates to spectra
+
+      spectra_highestTIC <-
+         purrr::map2(
+            spectra_highestTIC,
+            spectra_noiseEstimates,
+            ~dplyr::mutate(.x, noise = .y)
+         )
+
+      # Delete noise estimates to save memory
+
+      # mz_max_abund <-
+      #    iso_dist_list_union %>%
+      #    purrr::map(
+      #          ~dplyr::filter(.x, abundance == 100)
+      #    ) %>%
+      #    purrr::map(
+      #       ~dplyr::pull(.x, `m/z`)
+      #    ) %>%
+      #    purrr::map(as.list) %>%
+      #    .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
       mz_max_abund <-
          iso_dist_list_union %>%
          purrr::map(
-            ~dplyr::filter(.x, abundance == 100)
+            ~dplyr::group_by(.x, charge) %>%
+               dplyr::filter(abundance == 100) %>%
+               dplyr::slice(1)
          ) %>%
          purrr::map(
             ~dplyr::pull(.x, `m/z`)
@@ -161,16 +204,88 @@ make_every_spectrum <-
          purrr::map(as.list) %>%
          .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
+
+      # mz_max_abund_charge <-
+      #    iso_dist_list_union %>%
+      #    purrr::map(
+      #       ~dplyr::filter(.x, abundance == 100)
+      #    ) %>%
+      #    purrr::map(
+      #       ~dplyr::pull(.x, charge)
+      #    ) %>%
+      #    purrr::map(as.list) %>%
+      #    .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
       mz_max_abund_charge <-
          iso_dist_list_union %>%
          purrr::map(
-            ~dplyr::filter(.x, abundance == 100)
+            ~dplyr::group_by(.x, charge) %>%
+               dplyr::filter(abundance == 100) %>%
+               dplyr::slice(1)
          ) %>%
          purrr::map(
             ~dplyr::pull(.x, charge)
          ) %>%
          purrr::map(as.list) %>%
          .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+
+      # Get m/zs for all theoretical isotopologues by charge state
+      # for use in getting observed intensities for each isotopologue
+
+      mz_all_abund <-
+         iso_dist_list_union %>%
+         purrr::map(
+            ~dplyr::group_by(.x, charge) %>%
+               dplyr::group_split() %>%
+               purrr::map(
+                  ~dplyr::select(.x, `m/z`) %>%
+                     tibble::deframe()
+               )
+         )
+      # %>%
+      #    purrr::map(
+      #       rev
+      #    )
+      # %>%
+      #    purrr::map2(
+      #       mz_max_abund_charge,
+      #       ~purrr::set_names(.x, .y)
+      #    )
+
+      # Get abundances for all theoretical isotopologues by charge state
+      # for use in calculating cosine similarities
+
+      iso_abund_per_charge_state <-
+         iso_dist_list_union %>%
+         purrr::map(
+            ~dplyr::group_by(.x, charge) %>%
+               dplyr::group_split() %>%
+               purrr::map(
+                  ~dplyr::select(.x, abundance) %>%
+                     tibble::deframe()
+               )
+         )
+      # %>%
+      #    purrr::map2(
+      #       mz_max_abund_charge,
+      #       ~purrr::set_names(.x, .y)
+      #    )
+
+
+      # Get first noise value from spectrum to use in results_chargestateTICs2
+      # Theyre all the same anyway
+
+      mz_max_abund_noise <-
+         spectra_highestTIC %>%
+         purrr::map(
+            ~dplyr::pull(.x, noise) %>%
+               .[[1]]
+         ) %>%
+         purrr::map(as.list) %>%
+         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+      # Get values to use for vertical lines on plots
 
       iso_dist_vlines2 <-
          iso_dist_vlines %>%
@@ -192,6 +307,7 @@ make_every_spectrum <-
             ~dplyr::pull(.x, `m/z`)
          ) %>%
          purrr::map(as.list) %>%
+         # purrr::map(rev) %>%
          .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
 
@@ -232,7 +348,6 @@ make_every_spectrum <-
          }
 
       }
-
 
       spectra_highestTIC_names <-
          spectra_highestTIC %>%
@@ -291,7 +406,7 @@ make_every_spectrum <-
       timer$stop("Make MS, Top 1 most intense PART 1")
 
       ## Extract highest TICs from MS made in the previous step from within a
-      ## narrow window of the theoretical most abundant peak (3.33% of mz_window),
+      ## narrow window of the theoretical most abundant peak (mz_window * mz_window_scaling),
       ## add all charge states together
 
       timer$start("Make MS, Top 1 most intense, PART 2")
@@ -307,8 +422,114 @@ make_every_spectrum <-
                   df = .x,
                   x = mz,
                   y = intensity,
-                  xrange = c(.y - (mz_window/60), .y + (mz_window/60))
+                  xrange =
+                     c(
+                        .y - (mz_window*mz_window_scaling), .y + (mz_window*mz_window_scaling)
+                     )
                )
+            )
+         )
+
+      ## Extract highest TICs from MS made in the previous step from within a
+      ## narrow window of the all isotopologue peaks (mz_window * mz_window_scaling)
+
+      results_isotopologueTICs <-
+         purrr::map2(
+            spectra_highestTIC %>% purrr::map(list),
+            mz_all_abund,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~get_maxY_in_Xrange_vector(
+                  df = .x,
+                  x = mz,
+                  y = intensity,
+                  mz = .y,
+                  mz_window = mz_window,
+                  mz_window_scaling = mz_window_scaling
+               )
+            )
+         )
+
+      ## Extract highest TICs from MS made in the previous step from within a
+      ## narrow window of the all isotopologue peaks (mz_window * mz_window_scaling)
+
+      results_isotopologueMZ <-
+         purrr::map2(
+            spectra_highestTIC %>% purrr::map(list),
+            mz_all_abund,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~get_maxX_in_Xrange_vector(
+                  df = .x,
+                  x = mz,
+                  y = intensity,
+                  mz = .y,
+                  mz_window = mz_window,
+                  mz_window_scaling = mz_window_scaling
+               )
+            )
+         )
+
+
+      # Get abundances for theoretical isotopologues by charge state
+      # for use in plotting by scaling theoretical isotopologue
+      # intensity distribution by observed values
+
+      iso_abund_theoretical_scaled <-
+         purrr::map2(
+            iso_abund_per_charge_state,
+            results_isotopologueTICs,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~scales::rescale(.x, c(min(.y), max(.y)))
+            )
+         )
+
+
+      ## Calculate cosine similarities
+
+      cosine_sims <-
+         purrr::map2(
+            results_isotopologueTICs,
+            iso_abund_per_charge_state,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~coop::cosine(
+                  .x,
+                  .y,
+               ) %>%
+                  {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
+            )
+         )
+
+      ## Calculate spectral contrast angle
+
+      spectral_contrast_angles <-
+         purrr::pmap(
+            list(
+               results_isotopologueMZ,
+               results_isotopologueTICs,
+               mz_all_abund,
+               iso_abund_per_charge_state
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3,
+                  ..4
+               ),
+               ~MicroRaman::SCA(
+                  ..2 %>%
+                     purrr::set_names(..1),
+                  ..3 %>%
+                     purrr::set_names(..4)
+               ) %>%
+                  {if (is.nan(.) | is.null(.) | length(.) == 0) 1 else .}
             )
          )
 
@@ -321,7 +542,8 @@ make_every_spectrum <-
                mz_max_abund,
                mz_max_abund_charge,
                PTM_names_list,
-               results_chargestateTICs
+               results_chargestateTICs,
+               mz_max_abund_noise
             ),
             ~purrr::pmap(
                list(
@@ -329,14 +551,17 @@ make_every_spectrum <-
                   ..2,
                   ..3,
                   ..4,
-                  ..5
+                  ..5,
+                  ..6
                ),
                ~tibble::tibble(
                   name = ..1,
                   mz_max_abund = ..2,
                   mz_max_abund_charge = ..3,
                   PTM_name = ..4,
-                  maxTIC = ..5
+                  maxTIC = ..5,
+                  noise_estimate = ..6,
+                  `estimated_S/N` = round(maxTIC/noise_estimate, digits = 0)
                )
             )
          ) %>%
@@ -350,7 +575,9 @@ make_every_spectrum <-
          dplyr::summarize(
             charge_states = paste(unique(mz_max_abund_charge), collapse = ", "),
             PTM_name = PTM_name[[1]],
-            maxTICsum = sum(maxTIC)
+            maxTICsum = sum(maxTIC),
+            `highest_S/N` = max(`estimated_S/N`),
+            `lowest_S/N` = min(`estimated_S/N`)
          ) %>%
          dplyr::arrange(desc(maxTICsum))
 
@@ -364,7 +591,12 @@ make_every_spectrum <-
                mz_max_abund,
                mz_max_abund_charge,
                PTM_names_list,
-               iso_dist_vlines2
+               iso_dist_vlines2,
+               results_chargestateTICs,
+               cosine_sims,
+               mz_all_abund,
+               iso_abund_theoretical_scaled,
+               spectral_contrast_angles
             ),
             ~purrr::pmap(
                list(
@@ -373,28 +605,38 @@ make_every_spectrum <-
                   ..3,
                   ..4,
                   ..5,
-                  ..6
+                  ..6,
+                  ..7,
+                  ..8,
+                  ..9,
+                  ..10,
+                  ..11
                ),
                ~make_spectrum_top1(
                   df = ..1,
                   x = mz,
                   y = intensity,
+                  noise = noise,
                   accession = ..2,
                   scan_num = scan,
                   charge = ..4,
                   xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
                   ..5,
                   vlines = ..6,
+                  chargestateTIC = ..7,
+                  cosine_sims = ..8,
+                  mz_all_abund = ..9,
+                  iso_abund_theoretical_scaled = ..10,
+                  spectral_contrast_angles = ..11,
                   theme = MStheme01
                )
-            )
+            ) %>%
+               purrr::set_names(..4)
          ) %>%
          .[sumXIC_summary %>% dplyr::pull(seq_name)] %>%
          purrr::map(
             ~ggplot_list_checker(.x)
          )
-
-
 
       timer$stop("Make MS, Top 1 most intense, PART 2")
 
@@ -425,9 +667,9 @@ make_every_spectrum <-
 
       # Multi-arranged
 
-      spectra_highestTIC_plots <<- spectra_highestTIC_plots
-
-      rawFileName <<- rawFileName
+      # spectra_highestTIC_plots <<- spectra_highestTIC_plots
+      #
+      # rawFileName <<- rawFileName
 
       tablegrob_list_multi <-
          spectra_highestTIC_plots %>%
@@ -503,7 +745,7 @@ make_every_spectrum <-
          paste0(
             saveDir,
             fs::path_ext_remove(rawFileName),
-            "_potential_MS2_scans.csv"
+            "_MS2.csv"
          )
       )
 
@@ -517,7 +759,7 @@ make_every_spectrum <-
          paste0(
             saveDir,
             fs::path_ext_remove(rawFileName),
-            "_maxTIC_per_CS.xlsx"
+            "_maxTIC.xlsx"
          ),
          format_headers = TRUE
       )
@@ -530,7 +772,7 @@ make_every_spectrum <-
          filename = paste0(
             saveDir,
             fs::path_ext_remove(rawFileName),
-            "_spectrum_zooms.pdf"
+            "_specZoom.pdf"
          ),
          plot = tablegrob_list_multi,
          width = 20,
@@ -552,9 +794,15 @@ make_every_spectrum <-
       #    )
       # )
 
-
-      return(
-         timeR::getTimer(timer)
-      )
-
+      if (return_timers == TRUE) {
+         return(
+            timeR::getTimer(timer)
+         )
+      } else {
+         return(
+            list(
+               spectra_highestTIC_plots
+            )
+         )
+      }
    }
