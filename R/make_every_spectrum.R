@@ -20,7 +20,10 @@ make_every_spectrum <-
    function(
       make_every_XIC_output,
       mz_window = 3,
-      mz_window_scaling = 0.002,
+      mz_window_scaling = 0.00333,
+      SN_cutoff = 10,
+      mean_cosine_sim_cutoff = 0.8,
+      mean_SCA_cutoff = 0.4,
       MSoutputWidth = 18,
       MSoutputDPI = 200,
       makePNG = FALSE,
@@ -543,7 +546,9 @@ make_every_spectrum <-
                mz_max_abund_charge,
                PTM_names_list,
                results_chargestateTICs,
-               mz_max_abund_noise
+               mz_max_abund_noise,
+               cosine_sims,
+               spectral_contrast_angles
             ),
             ~purrr::pmap(
                list(
@@ -552,7 +557,9 @@ make_every_spectrum <-
                   ..3,
                   ..4,
                   ..5,
-                  ..6
+                  ..6,
+                  ..7,
+                  ..8
                ),
                ~tibble::tibble(
                   name = ..1,
@@ -561,7 +568,9 @@ make_every_spectrum <-
                   PTM_name = ..4,
                   maxTIC = ..5,
                   noise_estimate = ..6,
-                  `estimated_S/N` = round(maxTIC/noise_estimate, digits = 0)
+                  `estimated_S/N` = round(maxTIC/noise_estimate, digits = 0),
+                  cosine_sim = ..7,
+                  spectral_contrast_angle = ..8
                )
             )
          ) %>%
@@ -577,9 +586,20 @@ make_every_spectrum <-
             PTM_name = PTM_name[[1]],
             maxTICsum = sum(maxTIC),
             `highest_S/N` = max(`estimated_S/N`),
-            `lowest_S/N` = min(`estimated_S/N`)
+            `lowest_S/N` = min(`estimated_S/N`),
+            `mean_S/N` = mean(`estimated_S/N`),
+            mean_cosine_sim = mean(cosine_sim),
+            mean_SCA = mean(spectral_contrast_angle)
          ) %>%
-         dplyr::arrange(desc(maxTICsum))
+         dplyr::arrange(mean_SCA)
+
+      results_chargestateTICs_summary_filtered <-
+         results_chargestateTICs_summary %>%
+         dplyr::filter(
+            `highest_S/N` > SN_cutoff,
+            mean_cosine_sim > mean_cosine_sim_cutoff,
+            mean_SCA < mean_SCA_cutoff
+         )
 
       ## Make all MS based on mz of max abundance for each charge state
 
@@ -596,7 +616,8 @@ make_every_spectrum <-
                cosine_sims,
                mz_all_abund,
                iso_abund_theoretical_scaled,
-               spectral_contrast_angles
+               spectral_contrast_angles,
+               mz_window_scaling*mz_window
             ),
             ~purrr::pmap(
                list(
@@ -610,7 +631,8 @@ make_every_spectrum <-
                   ..8,
                   ..9,
                   ..10,
-                  ..11
+                  ..11,
+                  ..12
                ),
                ~make_spectrum_top1(
                   df = ..1,
@@ -628,6 +650,7 @@ make_every_spectrum <-
                   mz_all_abund = ..9,
                   iso_abund_theoretical_scaled = ..10,
                   spectral_contrast_angles = ..11,
+                  isotopologue_window = ..12,
                   theme = MStheme01
                )
             ) %>%
@@ -754,7 +777,8 @@ make_every_spectrum <-
       writexl::write_xlsx(
          list(
             "TIC per CS" = results_chargestateTICs2,
-            "TIC summary" = results_chargestateTICs_summary
+            "TIC summary" = results_chargestateTICs_summary,
+            "TIC summary filtered" = results_chargestateTICs_summary_filtered
          ),
          paste0(
             saveDir,

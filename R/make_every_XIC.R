@@ -297,25 +297,32 @@ make_every_XIC <-
 
       timer$start("Chemical formulas and isotopic distributions")
 
-      if (use_IAA == TRUE) {
+      # if (use_IAA == TRUE) {
+      #
+      #    chemform_temp <-
+      #       purrr::map(
+      #          target_seqs,
+      #          OrgMassSpecR::ConvertPeptide,
+      #          IAA = TRUE
+      #       )
+      #
+      # } else {
+      #
+      #    chemform_temp <-
+      #       purrr::map(
+      #          target_seqs,
+      #          OrgMassSpecR::ConvertPeptide,
+      #          IAA = FALSE
+      #       )
+      #
+      # }
 
-         chemform_temp <-
-            purrr::map(
-               target_seqs,
-               OrgMassSpecR::ConvertPeptide,
-               IAA = TRUE
-            )
-
-      } else {
-
-         chemform_temp <-
-            purrr::map(
-               target_seqs,
-               OrgMassSpecR::ConvertPeptide,
-               IAA = FALSE
-            )
-
-      }
+      chemform_temp <-
+         purrr::map(
+            target_seqs,
+            OrgMassSpecR::ConvertPeptide,
+            IAA = use_IAA
+         )
 
       chemform_names <-
          chemform_temp %>%

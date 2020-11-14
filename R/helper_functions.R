@@ -72,6 +72,7 @@ make_spectrum_top1 =
       mz_all_abund = NULL,
       iso_abund_theoretical_scaled = NULL,
       spectral_contrast_angles = NULL,
+      isotopologue_window = NULL,
       theme  = NULL
    ) {
       {
@@ -148,7 +149,7 @@ make_spectrum_top1 =
          dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
          ggplot2::ggplot(ggplot2::aes({{x}}, {{y}})) +
          ggplot2::geom_line(
-            ggplot2::aes(size = 0.35)
+            ggplot2::aes(size = 0.25)
          ) +
          ggplot2::geom_point(
             data = theo_points,
@@ -158,16 +159,46 @@ make_spectrum_top1 =
             size = 2.5,
             alpha = 0.5
          ) +
+         # ggplot2::annotate(
+         #    "tile",
+         #    x = mean(xrange),
+         #    y = 0,
+         #    width = isotopologue_window*10,
+         #    height = ymax,
+         #    fill = "red4",
+         #    alpha = 0.5,
+         #    linetype = "blank"
+         # ) +
          ggplot2::annotate(
             "rect",
-            xmin = mean(xrange)-((xrange[[2]]-xrange[[1]])*0.002),
-            xmax = mean(xrange)+((xrange[[2]]-xrange[[1]])*0.002),
+            xmin = mean(xrange)-(isotopologue_window/2),
+            xmax = mean(xrange)+(isotopologue_window/2),
+            ymin = 0,
+            ymax = ymax,
+            fill = "blue",
+            alpha = 0.5,
+            linetype = "blank"
+         ) +
+         ggplot2::annotate(
+            "rect",
+            xmin = vlines-(isotopologue_window/2),
+            xmax = vlines+(isotopologue_window/2),
             ymin = 0,
             ymax = ymax,
             fill = "red",
             alpha = 0.5,
             linetype = "blank"
          ) +
+         # ggplot2::annotate(
+         #    "tile",
+         #    x = vlines,
+         #    y = rep(0, length(vlines)),
+         #    width = isotopologue_window*10,
+         #    height = ymax,
+         #    fill = "red",
+         #    alpha = 0.5,
+         #    linetype = "blank"
+         # ) +
          ggplot2::geom_hline(
             ggplot2::aes(
                yintercept = noise,
@@ -176,17 +207,17 @@ make_spectrum_top1 =
             ),
             color = "blue"
          ) +
-         ggplot2::annotate(
-            "segment",
-            x = vlines,
-            xend = vlines,
-            y = 0,
-            yend = ymax,
-            color = "red",
-            alpha = 0.35,
-            size = 0.25,
-            linetype = "longdash"
-         ) +
+         # ggplot2::annotate(
+         #    "segment",
+         #    x = vlines,
+         #    xend = vlines,
+         #    y = 0,
+         #    yend = ymax,
+         #    color = "red",
+         #    alpha = 0.35,
+         #    size = 0.25,
+         #    linetype = "longdash"
+         # ) +
          ggplot2::annotate(
             "text",
             x = xrange[[2]],
