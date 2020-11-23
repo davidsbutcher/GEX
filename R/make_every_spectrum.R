@@ -23,7 +23,6 @@ make_every_spectrum <-
       mz_window_scaling = 0.00333,
       SN_cutoff = 10,
       mean_cosine_sim_cutoff = 0.8,
-      mean_SCA_cutoff = 0.4,
       MSoutputWidth = 18,
       MSoutputDPI = 200,
       makePNG = FALSE,
@@ -71,49 +70,11 @@ make_every_spectrum <-
 
       # Make future workers -----------------------------------------------------
 
-      if (makePNG == TRUE) {
-
-         timer$start("Make future workers")
-
-         if (is.null(sample_n_pforms) == FALSE) {
-
-            if (sample_n_pforms < 10) {
-
-               future::plan(
-                  future::multisession(
-                     workers = as.integer(sample_n_pforms),
-                     gc = TRUE,
-                     persistent = FALSE
-                  )
-               )
-
-            }
-
-            if (sample_n_pforms >= 10) {
-
-               future::plan(
-                  future::multisession(
-                     workers = 10L,
-                     gc = TRUE,
-                     persistent = FALSE
-                  )
-               )
-            }
-
-         } else {
-
-            future::plan(
-               future::multisession(
-                  workers = 5L,
-                  gc = TRUE,
-                  persistent = FALSE
-               )
-            )
-         }
-
-         timer$stop("Make future workers")
-
-      }
+      # timer$start("Make future workers")
+      #
+      # future::plan("future::multisession", workers = future_workers)
+      #
+      # timer$stop("Make future workers")
 
       # ggplot themes -----------------------------------------------------------
 
@@ -147,6 +108,14 @@ make_every_spectrum <-
             )
          )
 
+      # purrr::map(
+      #    scanNumsToRead,
+      #    ~rawR::readSpectrum(
+      #       rawFile,
+      #       scan = .x
+      #    )
+      # )
+
       spectra_highestTIC <-
          purrr::imap(
             scansToPlot,
@@ -169,7 +138,8 @@ make_every_spectrum <-
                metaData = list(name = .x$UNIPROTKB[[1]])
             ) %>%
                MALDIquant::estimateNoise(method = "MAD") %>%
-               .[,2]
+               .[,2] %>%
+               .[[1]]
          )
 
       # Add noise estimates to spectra
@@ -194,6 +164,11 @@ make_every_spectrum <-
       #    purrr::map(as.list) %>%
       #    .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
+      # m/z value of highest abundance theoretical isotopologue peaks.
+      # These are the standard for comparison of list lengths!
+
+      message("Getting highest intensity isotopologues")
+
       mz_max_abund <-
          iso_dist_list_union %>%
          purrr::map(
@@ -207,6 +182,8 @@ make_every_spectrum <-
          purrr::map(as.list) %>%
          .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
+      standard_lengths <-
+         purrr::map(mz_max_abund, length)
 
       # mz_max_abund_charge <-
       #    iso_dist_list_union %>%
@@ -219,6 +196,8 @@ make_every_spectrum <-
       #    purrr::map(as.list) %>%
       #    .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
+      message("Getting charges of highest intensity isotopologues")
+
       mz_max_abund_charge <-
          iso_dist_list_union %>%
          purrr::map(
@@ -230,11 +209,17 @@ make_every_spectrum <-
             ~dplyr::pull(.x, charge)
          ) %>%
          purrr::map(as.list) %>%
-         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+         .[sumXIC_summary %>% dplyr::pull(seq_name)] %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
+         )
 
 
       # Get m/zs for all theoretical isotopologues by charge state
       # for use in getting observed intensities for each isotopologue
+
+      message("Getting relative abundances of isotopologues")
 
       mz_all_abund <-
          iso_dist_list_union %>%
@@ -245,19 +230,16 @@ make_every_spectrum <-
                   ~dplyr::select(.x, `m/z`) %>%
                      tibble::deframe()
                )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
          )
-      # %>%
-      #    purrr::map(
-      #       rev
-      #    )
-      # %>%
-      #    purrr::map2(
-      #       mz_max_abund_charge,
-      #       ~purrr::set_names(.x, .y)
-      #    )
 
       # Get abundances for all theoretical isotopologues by charge state
       # for use in calculating cosine similarities
+
+      message("Getting isotopologue abundance per charge state")
 
       iso_abund_per_charge_state <-
          iso_dist_list_union %>%
@@ -268,16 +250,17 @@ make_every_spectrum <-
                   ~dplyr::select(.x, abundance) %>%
                      tibble::deframe()
                )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
          )
-      # %>%
-      #    purrr::map2(
-      #       mz_max_abund_charge,
-      #       ~purrr::set_names(.x, .y)
-      #    )
 
 
       # Get first noise value from spectrum to use in results_chargestateTICs2
       # Theyre all the same anyway
+
+      message("Getting noise estimate for highest intensity isotopologue")
 
       mz_max_abund_noise <-
          spectra_highestTIC %>%
@@ -289,6 +272,8 @@ make_every_spectrum <-
          .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
       # Get values to use for vertical lines on plots
+
+      message("Get values to use for vertical lines on plots")
 
       iso_dist_vlines2 <-
          iso_dist_vlines %>%
@@ -310,47 +295,50 @@ make_every_spectrum <-
             ~dplyr::pull(.x, `m/z`)
          ) %>%
          purrr::map(as.list) %>%
-         # purrr::map(rev) %>%
-         .[sumXIC_summary %>% dplyr::pull(seq_name)]
+         .[sumXIC_summary %>% dplyr::pull(seq_name)] %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
+         )
 
 
       ## ADDITIONAL PROCESSING OF ISO_DIST_VLINES2
       ## Lengths of list elements in iso_dist_vlines2 occasionally don't match other arguments to the pmap
       ## call that generates spectra_highestTIC_plots. This makes iso_dist_vlines2 match mz_max_abund
 
-      for (i in seq_along(iso_dist_vlines2)) {
-
-         for (j in rev(seq_along(iso_dist_vlines2[[i]]))) {
-
-            if (length(iso_dist_vlines2[[i]][[j]]) == 0) {
-
-               iso_dist_vlines2[[i]][[j]] <- NULL
-
-            }
-
-         }
-
-      }
-
-      for (i in seq_along(iso_dist_vlines2)) {
-
-         if (length(iso_dist_vlines2[[i]]) > length(mz_max_abund[[i]])) {
-
-            iso_dist_vlines2[[i]] <-
-               iso_dist_vlines2[1:length(mz_max_abund[[i]])]
-
-         } else if (length(iso_dist_vlines2[[i]]) < length(mz_max_abund[[i]])) {
-
-            while (length(iso_dist_vlines2[[i]]) != length(mz_max_abund[[i]])) {
-
-               iso_dist_vlines2[[i]] <-
-                  append(iso_dist_vlines2[[i]], 0)
-
-            }
-
-         }
-
-      }
+      # for (i in seq_along(iso_dist_vlines2)) {
+      #
+      #    for (j in rev(seq_along(iso_dist_vlines2[[i]]))) {
+      #
+      #       if (length(iso_dist_vlines2[[i]][[j]]) == 0) {
+      #
+      #          iso_dist_vlines2[[i]][[j]] <- NULL
+      #
+      #       }
+      #
+      #    }
+      #
+      # }
+      #
+      # for (i in seq_along(iso_dist_vlines2)) {
+      #
+      #    if (length(iso_dist_vlines2[[i]]) > length(mz_max_abund[[i]])) {
+      #
+      #       iso_dist_vlines2[[i]] <-
+      #          iso_dist_vlines2[1:length(mz_max_abund[[i]])]
+      #
+      #    } else if (length(iso_dist_vlines2[[i]]) < length(mz_max_abund[[i]])) {
+      #
+      #       while (length(iso_dist_vlines2[[i]]) != length(mz_max_abund[[i]])) {
+      #
+      #          iso_dist_vlines2[[i]] <-
+      #             append(iso_dist_vlines2[[i]], 0)
+      #
+      #       }
+      #
+      #    }
+      #
+      # }
 
       spectra_highestTIC_names <-
          spectra_highestTIC %>%
@@ -358,6 +346,8 @@ make_every_spectrum <-
          as.list()
 
       # Find potential MS2 scans
+
+      message("Trying to find potential MS2 scans")
 
       rawFileMetadataMS2 <-
          rawFileMetadata %>%
@@ -414,6 +404,8 @@ make_every_spectrum <-
 
       timer$start("Make MS, Top 1 most intense, PART 2")
 
+      message("Getting intensity for theoretical highest abundance isotopologue")
+
       results_chargestateTICs <-
          purrr::map2(
             spectra_highestTIC %>% purrr::map(list),
@@ -431,10 +423,16 @@ make_every_spectrum <-
                      )
                )
             )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
          )
 
       ## Extract highest TICs from MS made in the previous step from within a
       ## narrow window of the all isotopologue peaks (mz_window * mz_window_scaling)
+
+      message("Getting intensities for all isotopologues")
 
       results_isotopologueTICs <-
          purrr::map2(
@@ -452,10 +450,16 @@ make_every_spectrum <-
                   mz_window_scaling = mz_window_scaling
                )
             )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
          )
 
       ## Extract highest TICs from MS made in the previous step from within a
       ## narrow window of the all isotopologue peaks (mz_window * mz_window_scaling)
+
+      message("Getting m/z values at max intensity for all isotopologues")
 
       results_isotopologueMZ <-
          purrr::map2(
@@ -473,12 +477,18 @@ make_every_spectrum <-
                   mz_window_scaling = mz_window_scaling
                )
             )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
          )
 
 
       # Get abundances for theoretical isotopologues by charge state
       # for use in plotting by scaling theoretical isotopologue
       # intensity distribution by observed values
+
+      message("Scaling theoretical isotopic abundances")
 
       iso_abund_theoretical_scaled <-
          purrr::map2(
@@ -489,10 +499,15 @@ make_every_spectrum <-
                .y,
                ~scales::rescale(.x, c(min(.y), max(.y)))
             )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
          )
 
-
       ## Calculate cosine similarities
+
+      message("Calculating cosine similarities")
 
       cosine_sims <-
          purrr::map2(
@@ -501,42 +516,73 @@ make_every_spectrum <-
             ~purrr::map2(
                .x,
                .y,
-               ~coop::cosine(
+               ~calculate_cosine_similarity(
                   .x,
-                  .y,
+                  .y
                ) %>%
                   {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
             )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
          )
 
-      ## Calculate spectral contrast angle
+      # cosine_sims <-
+      #    purrr::map2(
+      #       results_isotopologueTICs,
+      #       iso_abund_per_charge_state,
+      #       ~purrr::map2(
+      #          .x,
+      #          .y,
+      #          ~coop::cosine(
+      #             .x,
+      #             .y,
+      #          ) %>%
+      #             {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
+      #       )
+      #    ) %>%
+      #    purrr::map2(
+      #       standard_lengths,
+      #       ~fix_list_length(.x, .y)
+      #    )
 
-      spectral_contrast_angles <-
-         purrr::pmap(
-            list(
-               results_isotopologueMZ,
-               results_isotopologueTICs,
-               mz_all_abund,
-               iso_abund_per_charge_state
-            ),
-            ~purrr::pmap(
-               list(
-                  ..1,
-                  ..2,
-                  ..3,
-                  ..4
-               ),
-               ~MicroRaman::SCA(
-                  ..2 %>%
-                     purrr::set_names(..1),
-                  ..3 %>%
-                     purrr::set_names(..4)
-               ) %>%
-                  {if (is.nan(.) | is.null(.) | length(.) == 0) 1 else .}
-            )
-         )
+      # ## Calculate spectral contrast angle
+      #
+      # message("Calculating spectral contrast angles")
+      #
+      # spectral_contrast_angles <-
+      #    purrr::pmap(
+      #       list(
+      #          results_isotopologueMZ,
+      #          results_isotopologueTICs,
+      #          mz_all_abund,
+      #          iso_abund_per_charge_state
+      #       ),
+      #       ~purrr::pmap(
+      #          list(
+      #             ..1,
+      #             ..2,
+      #             ..3,
+      #             ..4
+      #          ),
+      #          ~MicroRaman::SCA(
+      #             ..2 %>%
+      #                purrr::set_names(..1),
+      #             ..3 %>%
+      #                purrr::set_names(..4)
+      #          ) %>%
+      #             {if (is.nan(.) | is.null(.) | length(.) == 0) 1 else .}
+      #       )
+      #    ) %>%
+      #    purrr::map2(
+      #       standard_lengths,
+      #       ~fix_list_length(.x, .y, fill = c(1))
+      #    )
 
       ## Make table with all charge state TICs
+
+      message("Making table with all charge state TICs")
 
       results_chargestateTICs2 <-
          purrr::pmap(
@@ -547,8 +593,7 @@ make_every_spectrum <-
                PTM_names_list,
                results_chargestateTICs,
                mz_max_abund_noise,
-               cosine_sims,
-               spectral_contrast_angles
+               cosine_sims
             ),
             ~purrr::pmap(
                list(
@@ -558,8 +603,7 @@ make_every_spectrum <-
                   ..4,
                   ..5,
                   ..6,
-                  ..7,
-                  ..8
+                  ..7
                ),
                ~tibble::tibble(
                   name = ..1,
@@ -569,8 +613,7 @@ make_every_spectrum <-
                   maxTIC = ..5,
                   noise_estimate = ..6,
                   `estimated_S/N` = round(maxTIC/noise_estimate, digits = 0),
-                  cosine_sim = ..7,
-                  spectral_contrast_angle = ..8
+                  cosine_sim = ..7
                )
             )
          ) %>%
@@ -581,6 +624,10 @@ make_every_spectrum <-
       results_chargestateTICs_summary <-
          results_chargestateTICs2 %>%
          dplyr::group_by(name) %>%
+         dplyr::filter(
+            `estimated_S/N` != 0,
+            cosine_sim != 0
+         ) %>%
          dplyr::summarize(
             charge_states = paste(unique(mz_max_abund_charge), collapse = ", "),
             PTM_name = PTM_name[[1]],
@@ -588,20 +635,20 @@ make_every_spectrum <-
             `highest_S/N` = max(`estimated_S/N`),
             `lowest_S/N` = min(`estimated_S/N`),
             `mean_S/N` = mean(`estimated_S/N`),
-            mean_cosine_sim = mean(cosine_sim),
-            mean_SCA = mean(spectral_contrast_angle)
+            mean_cosine_sim = mean(cosine_sim)
          ) %>%
-         dplyr::arrange(mean_SCA)
+         dplyr::arrange(mean_cosine_sim)
 
       results_chargestateTICs_summary_filtered <-
          results_chargestateTICs_summary %>%
          dplyr::filter(
             `highest_S/N` > SN_cutoff,
-            mean_cosine_sim > mean_cosine_sim_cutoff,
-            mean_SCA < mean_SCA_cutoff
+            mean_cosine_sim > mean_cosine_sim_cutoff
          )
 
       ## Make all MS based on mz of max abundance for each charge state
+
+      message("Making plots")
 
       spectra_highestTIC_plots <-
          purrr::pmap(
@@ -616,7 +663,6 @@ make_every_spectrum <-
                cosine_sims,
                mz_all_abund,
                iso_abund_theoretical_scaled,
-               spectral_contrast_angles,
                mz_window_scaling*mz_window
             ),
             ~purrr::pmap(
@@ -631,8 +677,7 @@ make_every_spectrum <-
                   ..8,
                   ..9,
                   ..10,
-                  ..11,
-                  ..12
+                  ..11
                ),
                ~make_spectrum_top1(
                   df = ..1,
@@ -649,8 +694,7 @@ make_every_spectrum <-
                   cosine_sims = ..8,
                   mz_all_abund = ..9,
                   iso_abund_theoretical_scaled = ..10,
-                  spectral_contrast_angles = ..11,
-                  isotopologue_window = ..12,
+                  isotopologue_window = ..11,
                   theme = MStheme01
                )
             ) %>%
@@ -690,9 +734,7 @@ make_every_spectrum <-
 
       # Multi-arranged
 
-      # spectra_highestTIC_plots <<- spectra_highestTIC_plots
-      #
-      # rawFileName <<- rawFileName
+      message("Making tablegrob list for PDF output")
 
       tablegrob_list_multi <-
          spectra_highestTIC_plots %>%
@@ -742,7 +784,7 @@ make_every_spectrum <-
 
          timer$start("Save MS, Top 1, PNG")
 
-         furrr::future_pwalk(
+         purrr::pwalk(
             list(
                tablegrob_filenames,
                tablegrob_list_top1_arranged,

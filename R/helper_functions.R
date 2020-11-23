@@ -71,7 +71,6 @@ make_spectrum_top1 =
       cosine_sims = NULL,
       mz_all_abund = NULL,
       iso_abund_theoretical_scaled = NULL,
-      spectral_contrast_angles = NULL,
       isotopologue_window = NULL,
       theme  = NULL
    ) {
@@ -218,16 +217,16 @@ make_spectrum_top1 =
          #    size = 0.25,
          #    linetype = "longdash"
          # ) +
-         ggplot2::annotate(
-            "text",
-            x = xrange[[2]],
-            y = ymax,
-            label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\n SCA: {round((spectral_contrast_angles), digits = 3)} \nPTM: {PTMname}"),
-            vjust="inward",
-            hjust="inward",
-            size = 2,
-            alpha = 0.5
-         ) +
+      ggplot2::annotate(
+         "text",
+         x = xrange[[2]],
+         y = ymax,
+         label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\nPTM: {PTMname}"),
+         vjust="inward",
+         hjust="inward",
+         size = 2,
+         alpha = 0.5
+      ) +
          ggplot2::lims(
             x = xrange,
             y = c(0, ymax)
@@ -356,4 +355,66 @@ tibble_list_checker <-
 
       return(tibble_list)
 
+   }
+
+fix_list_length <-
+   function(
+      list, desired_length, fill = c(0)
+   ) {
+
+      if (length(list) < desired_length) {
+
+         while (length(list) < desired_length) {
+            list[[length(list)+1]] <- fill
+         }
+
+      } else if (length(list) > desired_length) {
+
+         while (length(list) > desired_length) {
+            list[[length(list)]] <- NULL
+         }
+
+      }
+
+      return(list)
+
+   }
+
+#' calculate_cosine_similarity
+#'
+#' Calculate cosine similarity of two vectors. Function adapted from the
+#' MicroRaman package.
+#'
+#' @param a
+#' @param b
+#'
+#' @importFrom magrittr %>%
+
+calculate_cosine_similarity <-
+   function(
+      a,
+      b
+   ) {
+
+      numerator <- sum(a * b)
+
+      quada <-
+         sapply(
+            a,
+            FUN = function(x) x ^ 2
+         ) %>%
+         sum()
+
+      quadb <-
+         sapply(
+            b,
+            FUN = function(x) x ^ 2
+         ) %>%
+         sum()
+
+      denominator <- sqrt(quada * quadb)
+
+      costh <- numerator / denominator
+
+      return(costh)
    }

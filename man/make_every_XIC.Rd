@@ -21,7 +21,9 @@ make_every_XIC(
   mz_range = c(600, 2000),
   XIC_tol = 2,
   use_IAA = FALSE,
-  abund_cutoff = 5
+  save_output = TRUE,
+  abund_cutoff = 5,
+  future_workers = 8
 )
 }
 \arguments{

@@ -11,4 +11,4 @@ Description: Generate XICs and MS for a set of search sequences.
 License: CC BY-NC 4.0
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.1.0
+RoxygenNote: 7.1.1

@@ -189,6 +189,14 @@ make_every_XIC <-
          )
 
 
+      # Make future workers -----------------------------------------------------
+
+      # timer$start("Make future workers, XIC")
+      #
+      # future::plan("future::multisession", workers = future_workers)
+      #
+      # timer$stop("Make future workers, XIC")
+
       # Load isotopes table -----------------------------------------------------
 
       if (use_depleted_isotopes == FALSE) {
@@ -224,54 +232,6 @@ make_every_XIC <-
 
       # Process target sequences ------------------------------------------------
 
-      # if (is.null(sample_n_pforms) == TRUE) {
-      #
-      #    target_seqs_df <-
-      #       targetSeqData %>%
-      #       {if (is.data.frame(.)) readr::read_csv(.) else .} %>%
-      #       dplyr::mutate(
-      #          MonoisoMass =
-      #             Peptides::mw(!!target_sequence_col_name_sym, monoisotopic = TRUE)
-      #       ) %>%
-      #       dplyr::filter(
-      #          MonoisoMass >= mass_range[[1]],
-      #          MonoisoMass <= mass_range[[2]]
-      #       )
-      #
-      #
-      #    target_seqs <-
-      #       target_seqs_df %>%
-      #       dplyr::select(
-      #          !!target_col_name, !!target_sequence_col_name
-      #       ) %>%
-      #       tibble::deframe() %>%
-      #       as.list()
-      #
-      # } else {
-      #
-      #    target_seqs_df <-
-      #       targetSeqData %>%
-      #       {if (is.data.frame(.)) readr::read_csv(.) else .} %>%
-      #       dplyr::mutate(
-      #          MonoisoMass =
-      #             Peptides::mw(!!target_sequence_col_name_sym, monoisotopic = TRUE)
-      #       ) %>%
-      #       dplyr::filter(
-      #          MonoisoMass >= mass_range[[1]],
-      #          MonoisoMass <= mass_range[[2]]
-      #       ) %>%
-      #       dplyr::sample_n(size = sample_n_pforms)
-      #
-      #    target_seqs <-
-      #       target_seqs_df %>%
-      #       dplyr::select(
-      #          !!target_col_name, !!target_sequence_col_name
-      #       ) %>%
-      #       tibble::deframe() %>%
-      #       as.list()
-      #
-      # }
-
       target_seqs_df <-
          targetSeqData %>%
          {if (!is.data.frame(.)) readr::read_csv(.) else .} %>%
@@ -296,26 +256,6 @@ make_every_XIC <-
       # Get elemental composition -----------------------------------------------
 
       timer$start("Chemical formulas and isotopic distributions")
-
-      # if (use_IAA == TRUE) {
-      #
-      #    chemform_temp <-
-      #       purrr::map(
-      #          target_seqs,
-      #          OrgMassSpecR::ConvertPeptide,
-      #          IAA = TRUE
-      #       )
-      #
-      # } else {
-      #
-      #    chemform_temp <-
-      #       purrr::map(
-      #          target_seqs,
-      #          OrgMassSpecR::ConvertPeptide,
-      #          IAA = FALSE
-      #       )
-      #
-      # }
 
       chemform_temp <-
          purrr::map(
@@ -601,7 +541,7 @@ make_every_XIC <-
             RT_of_maxTIC,
             ~dplyr::filter(scanNumber_and_RT, StartTime == .x)
          ) %>%
-         purrr:: map(
+         purrr::map(
             ~dplyr::pull(.x, scanNumber)
          )
 
