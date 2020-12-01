@@ -399,7 +399,8 @@ make_every_XIC <-
                   plotit=FALSE,
                   charge=.y,
                   emass=0.00054858,
-                  algo=1
+                  algo=1,
+                  verbose = F
                ) %>%
                   purrr::modify_depth(1, tibble::as_tibble) %>%
                   purrr::map(

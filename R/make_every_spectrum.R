@@ -23,6 +23,7 @@ make_every_spectrum <-
       mz_window_scaling = 0.00333,
       SN_cutoff = 10,
       mean_cosine_sim_cutoff = 0.8,
+      resPowerMS1 = 300000,
       MSoutputWidth = 18,
       MSoutputDPI = 200,
       makePNG = FALSE,
@@ -302,44 +303,6 @@ make_every_spectrum <-
          )
 
 
-      ## ADDITIONAL PROCESSING OF ISO_DIST_VLINES2
-      ## Lengths of list elements in iso_dist_vlines2 occasionally don't match other arguments to the pmap
-      ## call that generates spectra_highestTIC_plots. This makes iso_dist_vlines2 match mz_max_abund
-
-      # for (i in seq_along(iso_dist_vlines2)) {
-      #
-      #    for (j in rev(seq_along(iso_dist_vlines2[[i]]))) {
-      #
-      #       if (length(iso_dist_vlines2[[i]][[j]]) == 0) {
-      #
-      #          iso_dist_vlines2[[i]][[j]] <- NULL
-      #
-      #       }
-      #
-      #    }
-      #
-      # }
-      #
-      # for (i in seq_along(iso_dist_vlines2)) {
-      #
-      #    if (length(iso_dist_vlines2[[i]]) > length(mz_max_abund[[i]])) {
-      #
-      #       iso_dist_vlines2[[i]] <-
-      #          iso_dist_vlines2[1:length(mz_max_abund[[i]])]
-      #
-      #    } else if (length(iso_dist_vlines2[[i]]) < length(mz_max_abund[[i]])) {
-      #
-      #       while (length(iso_dist_vlines2[[i]]) != length(mz_max_abund[[i]])) {
-      #
-      #          iso_dist_vlines2[[i]] <-
-      #             append(iso_dist_vlines2[[i]], 0)
-      #
-      #       }
-      #
-      #    }
-      #
-      # }
-
       spectra_highestTIC_names <-
          spectra_highestTIC %>%
          names() %>%
@@ -528,57 +491,89 @@ make_every_spectrum <-
             ~fix_list_length(.x, .y)
          )
 
-      # cosine_sims <-
-      #    purrr::map2(
-      #       results_isotopologueTICs,
-      #       iso_abund_per_charge_state,
-      #       ~purrr::map2(
-      #          .x,
-      #          .y,
-      #          ~coop::cosine(
-      #             .x,
-      #             .y,
-      #          ) %>%
-      #             {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
-      #       )
-      #    ) %>%
-      #    purrr::map2(
-      #       standard_lengths,
-      #       ~fix_list_length(.x, .y)
-      #    )
+      ## Calculate S/N estimates
 
-      # ## Calculate spectral contrast angle
-      #
-      # message("Calculating spectral contrast angles")
-      #
-      # spectral_contrast_angles <-
-      #    purrr::pmap(
-      #       list(
-      #          results_isotopologueMZ,
-      #          results_isotopologueTICs,
-      #          mz_all_abund,
-      #          iso_abund_per_charge_state
-      #       ),
-      #       ~purrr::pmap(
-      #          list(
-      #             ..1,
-      #             ..2,
-      #             ..3,
-      #             ..4
-      #          ),
-      #          ~MicroRaman::SCA(
-      #             ..2 %>%
-      #                purrr::set_names(..1),
-      #             ..3 %>%
-      #                purrr::set_names(..4)
-      #          ) %>%
-      #             {if (is.nan(.) | is.null(.) | length(.) == 0) 1 else .}
-      #       )
-      #    ) %>%
-      #    purrr::map2(
-      #       standard_lengths,
-      #       ~fix_list_length(.x, .y, fill = c(1))
-      #    )
+      SN_estimate_obs <-
+         purrr::map2(
+            results_isotopologueTICs,
+            mz_max_abund_noise,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~(.x/.y)
+            )
+         ) %>%
+         purrr::map(
+            ~purrr::map_if(
+               .x,
+               ~length(.x) == 0,
+               ~0
+            )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
+         )
+
+      SN_estimate_theo <-
+         purrr::map2(
+            iso_abund_theoretical_scaled,
+            mz_max_abund_noise,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~(.x/.y)
+            )
+         ) %>%
+         purrr::map(
+            ~purrr::map_if(
+               .x,
+               ~length(.x) == 0,
+               ~0
+            )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
+         )
+
+
+      ## Calculate Mel's ScoreMFA
+
+      score_MFA <-
+         purrr::pmap(
+            list(
+               results_isotopologueMZ,
+               mz_all_abund,
+               resPowerMS1,
+               SN_estimate_obs,
+               SN_estimate_theo
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3,
+                  ..4,
+                  ..5
+               ),
+               ~ScoreMFA(
+                  ..1,
+                  ..2,
+                  rep(..3, length(..1)),
+                  ..4,
+                  ..5
+               ) %>%
+               {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
+            )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
+         )
+
+
+
 
       ## Make table with all charge state TICs
 
@@ -704,6 +699,8 @@ make_every_spectrum <-
          purrr::map(
             ~ggplot_list_checker(.x)
          )
+
+      saveRDS(spectra_highestTIC_plots, paste0(saveDir, "spectra_highestTIC_plots.rds"))
 
       timer$stop("Make MS, Top 1 most intense, PART 2")
 
