@@ -9,7 +9,7 @@
 #' @param PTMname_col_name
 #' @param PTMformula_col_name1
 #' @param PTMformula_col_name2
-#' @param use_depleted_isotopes
+#' @param isoAbund
 #' @param sample_n_pforms
 #' @param mass_range
 #' @param target_charges
@@ -18,6 +18,7 @@
 #' @param use_IAA
 #' @param save_output
 #' @param abund_cutoff
+#' @param hClust_height
 #'
 #' @return
 #' @export
@@ -38,7 +39,7 @@ make_every_XIC <-
       PTMname_col_name = c("PTMname"),
       PTMformula_col_name1 = c("FormulaToAdd"),
       PTMformula_col_name2 = c("FormulaToSubtract"),
-      use_depleted_isotopes = FALSE,
+      isoAbund = c("12C" = 0.9893, "14N" = 0.99636),
       sample_n_pforms = NULL,
       mass_range = c(0,100000),
       target_charges = c(1:50),
@@ -46,7 +47,8 @@ make_every_XIC <-
       XIC_tol = 2,
       use_IAA = FALSE,
       save_output = TRUE,
-      abund_cutoff = 5
+      abund_cutoff = 5,
+      hClust_height = 0.005
    ) {
 
       # library(purrr)
@@ -89,10 +91,10 @@ make_every_XIC <-
          msg = "outputDir is not a recognized directory"
       )
 
-      assertthat::assert_that(
-         assertthat::is.flag(use_depleted_isotopes),
-         msg = "use_depleted_isotopes should be TRUE or FALSE"
-      )
+      # assertthat::assert_that(
+      #    assertthat::is.flag(use_depleted_isotopes),
+      #    msg = "use_depleted_isotopes should be TRUE or FALSE"
+      # )
 
       assertthat::assert_that(
          assertthat::is.flag(use_IAA),
@@ -199,36 +201,41 @@ make_every_XIC <-
 
       # Load isotopes table -----------------------------------------------------
 
-      if (use_depleted_isotopes == FALSE) {
+      data(isotopes, package = "enviPat")
 
-         # data(isotopes, package = "enviPat")
-         #
-         # isotopes_to_use <- isotopes
+      isotopes_to_use <- isotopes
 
-         isotopes_to_use <-
-            readr::read_csv(
-               system.file(
-                  "input",
-                  "normal_isotopes.csv",
-                  package = "GEX"
-               )
-            ) %>%
-            as.data.frame()
+      # Get positions of specific isotopes in dataframe
 
-      } else {
+      index_12C <-
+         which(isotopes_to_use$isotope == "12C") %>%
+         .[[1]]
 
-         isotopes_to_use <-
-            readr::read_csv(
-               system.file(
-                  "input",
-                  "depleted_isotopes.csv",
-                  package = "GEX"
-               )
-            ) %>%
-            as.data.frame()
+      index_13C <-
+         which(isotopes_to_use$isotope == "13C") %>%
+         .[[1]]
 
-      }
+      index_14N <-
+         which(isotopes_to_use$isotope == "14N") %>%
+         .[[1]]
 
+      index_15N <-
+         which(isotopes_to_use$isotope == "15N") %>%
+         .[[1]]
+
+      # Replace values in dataframe with supplied values
+
+      isotopes_to_use$abundance[index_12C] <-
+         isoAbund[which(names(isoAbund) == "12C")]
+
+      isotopes_to_use$abundance[index_13C] <-
+         1 - isoAbund[which(names(isoAbund) == "12C")]
+
+      isotopes_to_use$abundance[index_14N] <-
+         isoAbund[which(names(isoAbund) == "14N")]
+
+      isotopes_to_use$abundance[index_15N] <-
+         1 - isoAbund[which(names(isoAbund) == "14N")]
 
       # Process target sequences ------------------------------------------------
 
@@ -357,18 +364,19 @@ make_every_XIC <-
             ~purrr::map2_chr(.x, .y, ~enviPat::mergeform(.x, .y))
          )
 
+      # Remove any elements with 0 count, they cause enviPat::isopattern to fail
+
       for (i in seq_along(chemform_withH)) {
 
          if (
             any(stringr::str_detect(chemform_withH[[i]], "C0|H0|N0|O0|P0|S0")) == TRUE
          ) {
-
             chemform_withH[[i]] <-
                stringr::str_remove_all(chemform_withH[[i]], "C0|H0|N0|O0|P0|S0")
-
          }
-
       }
+
+      # Get rid of some unneeded junk
 
       rm(chemform_temp)
       rm(chemform_names)
@@ -453,25 +461,59 @@ make_every_XIC <-
       iso_dist_vlines <-
          iso_dist_list_union
 
+
       iso_dist_list_union <-
          purrr::map(
             iso_dist_list_union,
-            purrr::reduce,
-            dplyr::union_all
+            ~tibble_list_checker(.x)
+         )
+
+      iso_dist_list_union <-
+         purrr::modify_depth(
+            iso_dist_list_union,
+            2,
+            ~dplyr::mutate(
+               .x,
+               cluster =
+                  cutree(
+                     hclust(
+                        dist(`m/z`, method = "maximum"), method = "centroid"),
+                     h = hClust_height
+                  )
+            ) %>%
+               dplyr::group_by(cluster) %>%
+               dplyr::summarise(
+                  `m/z` = mean(`m/z`),
+                  abundance = sum(abundance),
+                  charge = mean(charge)
+               ) %>%
+               dplyr::ungroup()
          ) %>%
          purrr::map(
-            ~dplyr::group_by(
-               .x,
-               `m/z_group` =
-                  cut(`m/z`, breaks = seq(mz_range[[1]], mz_range[[2]], by = 0.01))
-            ) %>%
-               dplyr::arrange(
-                  dplyr::desc(abundance), .by_group = TRUE
-               ) %>%
-               dplyr::slice_head() %>%
-               dplyr::ungroup() %>%
-               dplyr::select(-`m/z_group`)
+            purrr::reduce,
+            dplyr::union_all
          )
+
+
+      # iso_dist_list_union_OLD <-
+      #    purrr::map(
+      #       iso_dist_list_union,
+      #       purrr::reduce,
+      #       dplyr::union_all
+      #    ) %>%
+      #    purrr::map(
+      #       ~dplyr::group_by(
+      #          .x,
+      #          `m/z_group` =
+      #             cut(`m/z`, breaks = seq(mz_range[[1]], mz_range[[2]], by = 0.01))
+      #       ) %>%
+      #          dplyr::arrange(
+      #             dplyr::desc(abundance), .by_group = TRUE
+      #          ) %>%
+      #          dplyr::slice_head() %>%
+      #          dplyr::ungroup() %>%
+      #          dplyr::select(-`m/z_group`)
+      #    )
 
       timer$stop("Chemical formulas and isotopic distributions")
 
@@ -623,35 +665,47 @@ make_every_XIC <-
 
          systime <- format(Sys.time(), "%Y%m%d")
 
-         if (use_depleted_isotopes == FALSE) {
+         if (all(isoAbund == c("12C" = 0.9893, "14N" = 0.99636))) {
 
             saveDir <-
-               paste0(
+               fs::path(
                   outputDir,
-                  "/",
-                  fs::path_ext_remove(rawFileName),
-                  "_",
-                  length(target_seqs),
-                  "seqs_Normiso/"
+                  paste0(
+                     fs::path_ext_remove(rawFileName),
+                     "_",
+                     length(target_seqs),
+                     "seqs_IsoNorm"
+                  )
                ) %>%
                stringr::str_trunc(246, "right", ellipsis = "")
 
-         } else if (use_depleted_isotopes == TRUE) {
+         } else if (isoAbund[[1]] < 0.9893 | isoAbund[[2]] < 0.99636) {
 
             saveDir <-
-               paste0(
+               fs::path(
                   outputDir,
-                  "/",
-                  fs::path_ext_remove(rawFileName),
-                  "_",
-                  length(target_seqs),
-                  "seqs_IDiso/"
+                  paste0(
+                     fs::path_ext_remove(rawFileName),
+                     "_",
+                     length(target_seqs),
+                     "seqs_IsoDep"
+                  )
                ) %>%
                stringr::str_trunc(246, "right", ellipsis = "")
 
          } else {
 
-            stop("use_depleted_isotopes not set to TRUE or FALSE")
+            saveDir <-
+               fs::path(
+                  outputDir,
+                  paste0(
+                     fs::path_ext_remove(rawFileName),
+                     "_",
+                     length(target_seqs),
+                     "seqs"
+                  )
+               ) %>%
+               stringr::str_trunc(246, "right", ellipsis = "")
 
          }
 
@@ -661,12 +715,13 @@ make_every_XIC <-
 
          timer$start("Save XIC results")
 
-         # Save spreadsheet data
+         # Save target sequences to saveDir
 
          message(
             paste0(
                "Saving target sequences to ",
                saveDir,
+               "/",
                fs::path_ext_remove(
                   stringr::str_trunc(
                      rawFileName, 90, "right", ellipsis = ""
@@ -679,18 +734,20 @@ make_every_XIC <-
          readr::write_csv(
             target_seqs_df,
             path =
-               paste0(
+               fs::path(
                   saveDir,
-                  fs::path_ext_remove(
-                     stringr::str_trunc(
-                        rawFileName, 90, "right", ellipsis = ""
-                     )
-                  ),
-                  '_seqs.csv'
+                  paste0(
+                     fs::path_ext_remove(
+                        stringr::str_trunc(
+                           rawFileName, 90, "right", ellipsis = ""
+                        )
+                     ),
+                     '_seqs.csv'
+                  )
                )
          )
 
-         # writexl::write_xlsx(
+         # readr::write_csv(
          #    target_seqs_df,
          #    path =
          #       paste0(
@@ -700,23 +757,29 @@ make_every_XIC <-
          #                rawFileName, 90, "right", ellipsis = ""
          #             )
          #          ),
-         #          '_target_seqs.xlsx'
+         #          '_seqs.csv'
          #       )
          # )
+
+         # Save XIC data to saveDir
 
          readr::write_csv(
             sumXIC_summary,
             path =
-               paste0(
+               fs::path(
                   saveDir,
-                  fs::path_ext_remove(
-                     stringr::str_trunc(
-                        rawFileName, 90, "right", ellipsis = ""
-                     )
-                  ),
-                  '_XICsum.csv'
+                  paste0(
+                     fs::path_ext_remove(
+                        stringr::str_trunc(
+                           rawFileName, 90, "right", ellipsis = ""
+                        )
+                     ),
+                     '_XICsum.csv'
+                  )
                )
          )
+
+         # Save theo isotope distributions to saveDir
 
          purrr::imap(
             iso_dist_list_union,
@@ -726,28 +789,34 @@ make_every_XIC <-
             dplyr::select(accession, tidyr::everything()) %>%
             readr::write_csv(
                path =
-                  paste0(
+                  fs::path(
                      saveDir,
-                     fs::path_ext_remove(
-                        stringr::str_trunc(
-                           rawFileName, 90, "right", ellipsis = ""
-                        )
-                     ),
-                     '_isodist.csv'
+                     paste0(
+                        fs::path_ext_remove(
+                           stringr::str_trunc(
+                              rawFileName, 90, "right", ellipsis = ""
+                           )
+                        ),
+                        '_isodist.csv'
+                     )
                   )
             )
 
          # Save chromatograms, all together
 
-         XIC_groblist_filename <-
-            paste0(
-               saveDir,
-               fs::path_ext_remove(rawFileName),
-               "_XICs"
-            )
-
          ggplot2::ggsave(
-            filename = paste0(XIC_groblist_filename, ".pdf"),
+            filename =
+               fs::path(
+                  saveDir,
+                  paste0(
+                     fs::path_ext_remove(
+                        stringr::str_trunc(
+                           rawFileName, 90, "right", ellipsis = ""
+                        )
+                     ),
+                     '_XICs.pdf'
+                  )
+               ),
             plot = XIC_groblist,
             width = 20,
             height = 12,

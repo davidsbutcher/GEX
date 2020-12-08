@@ -174,7 +174,7 @@ make_every_spectrum <-
          iso_dist_list_union %>%
          purrr::map(
             ~dplyr::group_by(.x, charge) %>%
-               dplyr::filter(abundance == 100) %>%
+               dplyr::filter(abundance == max(abundance)) %>%
                dplyr::slice(1)
          ) %>%
          purrr::map(
@@ -203,7 +203,7 @@ make_every_spectrum <-
          iso_dist_list_union %>%
          purrr::map(
             ~dplyr::group_by(.x, charge) %>%
-               dplyr::filter(abundance == 100) %>%
+               dplyr::filter(abundance == max(abundance)) %>%
                dplyr::slice(1)
          ) %>%
          purrr::map(
@@ -215,7 +215,6 @@ make_every_spectrum <-
             standard_lengths,
             ~fix_list_length(.x, .y)
          )
-
 
       # Get m/zs for all theoretical isotopologues by charge state
       # for use in getting observed intensities for each isotopologue
@@ -287,8 +286,6 @@ make_every_spectrum <-
                .x,
                abundance != 100
             ) %>%
-               # dplyr::mutate(`m/z_round` = round(`m/z`, digits = 1)) %>%
-               # dplyr::distinct(`m/z_round`, .keep_all = TRUE) %>%
                dplyr::top_n(10, abundance)
          ) %>%
          purrr::modify_depth(
@@ -301,7 +298,6 @@ make_every_spectrum <-
             standard_lengths,
             ~fix_list_length(.x, .y)
          )
-
 
       spectra_highestTIC_names <-
          spectra_highestTIC %>%
@@ -564,7 +560,7 @@ make_every_spectrum <-
                   ..4,
                   ..5
                ) %>%
-               {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
+                  {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
             )
          ) %>%
          purrr::map2(
@@ -658,7 +654,8 @@ make_every_spectrum <-
                cosine_sims,
                mz_all_abund,
                iso_abund_theoretical_scaled,
-               mz_window_scaling*mz_window
+               mz_window_scaling*mz_window,
+               score_MFA
             ),
             ~purrr::pmap(
                list(
@@ -672,7 +669,8 @@ make_every_spectrum <-
                   ..8,
                   ..9,
                   ..10,
-                  ..11
+                  ..11,
+                  ..12
                ),
                ~make_spectrum_top1(
                   df = ..1,
@@ -690,7 +688,8 @@ make_every_spectrum <-
                   mz_all_abund = ..9,
                   iso_abund_theoretical_scaled = ..10,
                   isotopologue_window = ..11,
-                  theme = MStheme01
+                  theme = MStheme01,
+                  score_mfa = ..12
                )
             ) %>%
                purrr::set_names(..4)
@@ -700,7 +699,7 @@ make_every_spectrum <-
             ~ggplot_list_checker(.x)
          )
 
-      saveRDS(spectra_highestTIC_plots, paste0(saveDir, "spectra_highestTIC_plots.rds"))
+      saveRDS(spectra_highestTIC_plots, paste0(saveDir, "/spectra_highestTIC_plots.rds"))
 
       timer$stop("Make MS, Top 1 most intense, PART 2")
 
@@ -773,9 +772,9 @@ make_every_spectrum <-
 
       if (makePNG == TRUE) {
 
-         if (dir.exists(paste0(saveDir, "mass_spec/")) == FALSE) {
+         if (dir.exists(paste0(saveDir, "/mass_spec/")) == FALSE) {
 
-            dir.create(paste0(saveDir, "mass_spec/"))
+            dir.create(paste0(saveDir, "/mass_spec/"))
 
          }
 
@@ -804,10 +803,12 @@ make_every_spectrum <-
 
       readr::write_csv(
          potential_MS2_output,
-         paste0(
+         fs::path(
             saveDir,
-            fs::path_ext_remove(rawFileName),
-            "_MS2.csv"
+            paste0(
+               fs::path_ext_remove(rawFileName),
+               "_MS2.csv"
+            )
          )
       )
 
@@ -819,10 +820,12 @@ make_every_spectrum <-
             "TIC summary" = results_chargestateTICs_summary,
             "TIC summary filtered" = results_chargestateTICs_summary_filtered
          ),
-         paste0(
+         fs::path(
             saveDir,
-            fs::path_ext_remove(rawFileName),
-            "_maxTIC.xlsx"
+            paste0(
+               fs::path_ext_remove(rawFileName),
+               "_maxTIC.xlsx"
+            )
          ),
          format_headers = TRUE
       )
@@ -832,11 +835,14 @@ make_every_spectrum <-
       timer$start("Save MS, Top 1, PDF")
 
       ggplot2::ggsave(
-         filename = paste0(
-            saveDir,
-            fs::path_ext_remove(rawFileName),
-            "_specZoom.pdf"
-         ),
+         filename =
+            fs::path(
+               saveDir,
+               paste0(
+                  fs::path_ext_remove(rawFileName),
+                  "_specZoom.pdf"
+               )
+            ),
          plot = tablegrob_list_multi,
          width = 20,
          height = 12,
@@ -863,9 +869,7 @@ make_every_spectrum <-
          )
       } else {
          return(
-            list(
-               spectra_highestTIC_plots
-            )
+            spectra_highestTIC_plots
          )
       }
    }

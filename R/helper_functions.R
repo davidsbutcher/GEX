@@ -54,6 +54,49 @@ make_XIC_plot = function(df, x, y, PTMname, seq_name) {
 
 }
 
+make_XIC_plot_MS2 =
+   function(
+      df,
+      x,
+      y,
+      seq_name,
+      ion_name,
+      ion_charge,
+      RT_of_maxTIC
+   ) {
+
+      ggplot2::ggplot(df, ggplot2::aes({{x}}, {{y}})) +
+         ggplot2::geom_line() +
+         ggplot2::labs(
+            title = glue::glue("{seq_name}")
+         ) +
+         ggplot2::geom_text(
+            data = ~dplyr::filter(.x, {{y}} == max({{y}})),
+            ggplot2::aes(
+               x = {{x}},
+               y = {{y}},
+               label = glue::glue(
+                  "{ion_name}\nCharge {ion_charge}+\nMaxTIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}"
+               ),
+               alpha = 0.5,
+               size = 2
+            ),
+            vjust="inward",
+            hjust="inward",
+            nudge_x = 5
+         ) +
+         ggthemes::theme_clean(base_size = 10) +
+         ggplot2::labs(
+            x = "Retention Time (min)",
+            y = "Total Ion Current"
+         ) +
+         ggplot2::guides(
+            alpha = "none",
+            size = "none"
+         )
+
+   }
+
 
 make_spectrum_top1 =
    function(
@@ -69,6 +112,7 @@ make_spectrum_top1 =
       vlines = NULL,
       chargestateTIC = NULL,
       cosine_sims = NULL,
+      score_mfa = NULL,
       mz_all_abund = NULL,
       iso_abund_theoretical_scaled = NULL,
       isotopologue_window = NULL,
@@ -175,17 +219,17 @@ make_spectrum_top1 =
             ymin = 0,
             ymax = ymax,
             fill = "blue",
-            alpha = 0.5,
+            alpha = 0.25,
             linetype = "blank"
          ) +
          ggplot2::annotate(
             "rect",
-            xmin = vlines-(isotopologue_window/2),
-            xmax = vlines+(isotopologue_window/2),
+            xmin = mz_all_abund-(isotopologue_window/2),
+            xmax = mz_all_abund+(isotopologue_window/2),
             ymin = 0,
             ymax = ymax,
             fill = "red",
-            alpha = 0.5,
+            alpha = 0.25,
             linetype = "blank"
          ) +
          # ggplot2::annotate(
@@ -221,7 +265,7 @@ make_spectrum_top1 =
          "text",
          x = xrange[[2]],
          y = ymax,
-         label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\nPTM: {PTMname}"),
+         label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\nPTM: {PTMname}\n ScoreMFA: {round((score_mfa), digits = 3)}"),
          vjust="inward",
          hjust="inward",
          size = 2,
@@ -229,6 +273,101 @@ make_spectrum_top1 =
       ) +
          ggplot2::lims(
             x = xrange,
+            y = c(0, ymax)
+         ) +
+         ggplot2::guides(
+            color = "none",
+            size = "none",
+            alpha = "none"
+         ) +
+         ggplot2::labs(
+            x = "m/z",
+            y = "Intensity"
+         ) +
+         ggplot2::scale_size_identity() +
+         theme
+
+   }
+
+make_spectrum_MS2 =
+   function(
+      df,
+      mz,
+      intensity,
+      name = "",
+      max_mz = NULL,
+      scan = NULL,
+      ion = NULL,
+      charge = NULL,
+      mz_all_abund = NULL,
+      isotopologue_window = NULL,
+      theme  = NULL
+   ) {
+
+      {
+         xmin <-
+            df %>%
+            dplyr::filter({{mz}} == min({{mz}})) %>%
+            dplyr::pull({{mz}})
+
+         xmax <-
+            df %>%
+            dplyr::filter({{mz}} == max({{mz}})) %>%
+            dplyr::pull({{mz}})
+
+         ymax <-
+            df %>%
+            dplyr::filter({{intensity}} == max({{intensity}})) %>%
+            dplyr::pull({{intensity}}) %>%
+            magrittr::extract(1)
+
+
+         if (length(ymax) > 1) {
+
+            ymax <- ymax[[1]]
+
+         }
+
+         if (length(ymax) == 0) {
+
+            ymax <- 10
+
+         }
+
+         if (all.equal(0, ymax) == TRUE) {
+
+            ymax <- 10
+
+         }
+
+      }
+
+      ggplot2::ggplot(df, ggplot2::aes({{mz}}, {{intensity}})) +
+         ggplot2::geom_line(
+            ggplot2::aes(size = 0.25)
+         ) +
+         ggplot2::annotate(
+            "text",
+            x = xmax,
+            y = ymax,
+            label = glue::glue("{name}\n{ion}\nCharge +{charge}\nScan #{scan}"),
+            vjust="inward",
+            hjust="inward",
+            size = 2,
+            alpha = 0.5
+         ) +
+         ggplot2::annotate(
+            "rect",
+            xmin = mz_all_abund-(isotopologue_window/2),
+            xmax = mz_all_abund+(isotopologue_window/2),
+            ymin = 0,
+            ymax = ymax,
+            fill = "red",
+            alpha = 0.25,
+            linetype = "blank"
+         ) +
+         ggplot2::lims(
+            x = c(xmin, xmax),
             y = c(0, ymax)
          ) +
          ggplot2::guides(
