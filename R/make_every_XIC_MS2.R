@@ -1,4 +1,4 @@
-#' Title
+#' make_every_XIC_MS2
 #'
 #' @param rawFileDir
 #' @param rawFileName
@@ -12,7 +12,8 @@
 #' @param isoAbund
 #' @param fragment_mass_range
 #' @param fragment_charges
-#' @param mz_range
+#' @param fragment_mz_range
+#' @param fragment_pos_cutoff
 #' @param XIC_tol_MS2
 #' @param use_IAA
 #' @param save_output
@@ -40,19 +41,21 @@ make_every_XIC_MS2 <-
       isoAbund = c("12C" = 0.9893, "14N" = 0.99636),
       fragment_mass_range = c(0,100000),
       fragment_charges = c(1:5),
-      mz_range = c(600,2000),
+      fragment_mz_range = c(600,2000),
+      fragment_pos_cutoff = 20,
       XIC_tol_MS2 = 10,
+      XIC_TIC_cutoff = 25000,
+      resPowerMS2 = 150000,
       mz_window = 3,
-      mz_window_scaling = 0.00333,
       use_IAA = FALSE,
       save_output = TRUE,
       abund_cutoff = 5,
       hClust_height = 0.005
    ) {
 
-      # Load rawR package
+      # Load rawrr package
 
-      library(rawR)
+      library(rawrr)
 
       options(dplyr.summarise.inform = FALSE)
 
@@ -245,6 +248,8 @@ make_every_XIC_MS2 <-
 
       # Get elemental compositions ----------------------------------------------
 
+      # Generate all possible fragments
+
       fragments <-
          purrr::map2(
             target_seqs,
@@ -260,11 +265,14 @@ make_every_XIC_MS2 <-
                ) %>%
                   tibble::as_tibble() %>%
                   dplyr::filter(
-                     mz > mz_range[[1]] & mz < mz_range[[2]]
+                     mz > fragment_mz_range[[1]] & mz < fragment_mz_range[[2]],
+                     pos >= fragment_pos_cutoff[[1]] & pos <= fragment_pos_cutoff[[2]]
                   )
             ) %>%
                purrr::reduce(dplyr::union_all)
          )
+
+      # Generate chemical formulas
 
       chemformulas_noH <-
          purrr::map(
@@ -284,6 +292,8 @@ make_every_XIC_MS2 <-
                ) %>%
                unlist()
          )
+
+      # Add one H per charge to chemical formulas
 
       charges <-
          purrr::map(
@@ -307,6 +317,8 @@ make_every_XIC_MS2 <-
                )
             )
          )
+
+      # Add chemical formulas to fragments data
 
       fragments2 <-
          purrr::map2(
@@ -364,14 +376,16 @@ make_every_XIC_MS2 <-
                cluster =
                   cutree(
                      hclust(
-                        dist(`m/z`, method = "maximum"), method = "centroid"),
+                        dist(
+                           `m/z`, method = "maximum"), method = "centroid"
+                     ),
                      h = hClust_height
                   )
             ) %>%
                dplyr::group_by(cluster) %>%
                dplyr::summarise(
                   `m/z` = mean(`m/z`),
-                  abundance = sum(abundance),
+                  abundance = sum(abundance), # All clustered peak abundances are summed
                   charge = mean(charge),
                   ion = dplyr::first(ion)
                ) %>%
@@ -379,22 +393,15 @@ make_every_XIC_MS2 <-
                dplyr::ungroup()
          )
 
-      # Split all isotopic distributions by ion and charge
+      # Split all isotopic distributions by ion name
 
       fragment_groups <-
          purrr::map(
             iso_dist_cluster,
-            ~dplyr::group_by(.x, ion, charge) %>%
+            # ~dplyr::group_by(.x, ion, charge) %>%
+            ~dplyr::group_by(.x, ion) %>%
                dplyr::group_split()
          )
-
-      # fragment_groups_maxabund <-
-      #    fragment_groups %>%
-      #    purrr::map_depth(
-      #       2,
-      #       ~dplyr::filter(.x, abundance == max(abundance))
-      #       # dplyr::mutate(mass = as.character(round(`m/z`, digits = 5)))
-      #    )
 
       # Read XICs --------
 
@@ -403,7 +410,7 @@ make_every_XIC_MS2 <-
             fragment_groups,
             ~purrr::map(
                .x,
-               ~rawR::readChromatogram(
+               ~rawrr::readChromatogram(
                   rawfile = rawFile,
                   mass = .x$`m/z`,
                   filter = "ms2",
@@ -420,7 +427,24 @@ make_every_XIC_MS2 <-
       # Process XICs by replacing NULL tibbles and adding together all XICs
       # for same ion and charge
 
-      XIC_MS2b <-
+      # charges_to_delete_A <-
+      #    XIC_MS2 %>%
+      #    purrr::map_depth(
+      #       3,
+      #       ~tibble::tibble(
+      #          times = .x$times,
+      #          intensities = .x$intensities
+      #       )
+      #    )
+      #
+      # charges_to_delete_B <-
+      #    purrr::map_depth(
+      #       charges_to_delete_A,
+      #       3,
+      #       ~which(nrow(.x) == 0)
+      #    )
+
+      XIC_MS2_sum <-
          XIC_MS2 %>%
          purrr::map_depth(
             3,
@@ -443,55 +467,45 @@ make_every_XIC_MS2 <-
                dplyr::summarize(int_sum = sum(intensities))
          )
 
+      # XIC_MS2 is large and no longer needed, delete it
 
+      rm(XIC_MS2)
 
-      # XIC_MS2b <-
-      #    XIC_MS2 %>%
-      #    purrr::map_depth(
-      #       3,
-      #       ~tibble::tibble(
-      #          mass = as.character(round(.x$mass, digits = 5)),
-      #          times =
-      #             if (is.null(.x$times)) 0 else .x$times,
-      #          intensities =
-      #             if (is.null(.x$intensities)) 0 else .x$intensities
-      #       ) %>%
-      #          dplyr::filter(
-      #             intensities == max(intensities)
-      #          )
-      #    ) %>%
-      #    purrr::map_depth(
-      #       2,
-      #       ~purrr::reduce(.x, dplyr::union_all)
-      #    )
+      # Remove fragments with TIC < XIC_TIC_cutoff from
+      # fragment_groups and XIC_MS2_sum
 
-      # fragment_groups3 <-
-      #    purrr::map2(
-      #       fragment_groups_maxabund,
-      #       XIC_MS2b,
-      #       ~purrr::map2(
-      #          .x,
-      #          .y,
-      #          ~dplyr::left_join(
-      #             .x,
-      #             .y,
-      #
-      #          ) %>%
-      #             dplyr::select(-mass, -cluster) %>%
-      #             dplyr::rename("RT_min" = times) %>%
-      #             dplyr::mutate(RT_sec = round(RT_min*60, digits = 3)) %>%
-      #             dplyr::filter(
-      #                intensities != 0,
-      #                intensities == max(intensities)
-      #             )
-      #       )
-      #    ) %>%
-      #    purrr::map(
-      #       ~purrr::reduce(.x, dplyr::union_all)
-      #    )
+      fragments_to_retain <-
+         XIC_MS2_sum %>%
+         purrr::map_depth(
+            2,
+            ~dplyr::filter(.x, int_sum == max(int_sum)) %>%
+               dplyr::pull(int_sum)
+         ) %>%
+         purrr::map(
+            unlist
+         ) %>%
+         purrr::map(
+            ~which(.x > XIC_TIC_cutoff)
+         )
+
+      fragment_groups_trunc <-
+         purrr::map2(
+            fragment_groups,
+            fragments_to_retain,
+            ~.x[.y]
+         )
+
+      XIC_MS2_sum_trunc <-
+         purrr::map2(
+            XIC_MS2_sum,
+            fragments_to_retain,
+            ~.x[.y]
+         )
+
+      # Get ion names, charges, and max TIC from XIC for plotting
 
       ion_names <-
-         fragment_groups %>%
+         fragment_groups_trunc %>%
          purrr::map_depth(
             2,
             ~dplyr::pull(.x, ion) %>%
@@ -499,7 +513,7 @@ make_every_XIC_MS2 <-
          )
 
       ion_charges <-
-         fragment_groups %>%
+         fragment_groups_trunc %>%
          purrr::map_depth(
             2,
             ~dplyr::pull(.x, charge) %>%
@@ -507,7 +521,7 @@ make_every_XIC_MS2 <-
          )
 
       XIC_maxTIC_MS2 <-
-         XIC_MS2b %>%
+         XIC_MS2_sum_trunc %>%
          purrr::map_depth(
             2,
             ~dplyr::filter(.x, int_sum == max(int_sum)) %>%
@@ -520,8 +534,8 @@ make_every_XIC_MS2 <-
       XIC_plots_MS2 <-
          purrr::pmap(
             list(
-               XIC_MS2b,
-               as.list(names(fragment_groups)),
+               XIC_MS2_sum_trunc,
+               as.list(names(fragment_groups_trunc)),
                ion_names,
                ion_charges,
                XIC_maxTIC_MS2
@@ -682,7 +696,7 @@ make_every_XIC_MS2 <-
       # Extract scans and make spectra ------------------------------------------
 
       rawFileMetadata <-
-         rawR::readIndex(
+         rawrr::readIndex(
             rawFile
          ) %>%
          tibble::as_tibble() %>%
@@ -692,9 +706,8 @@ make_every_XIC_MS2 <-
          rawFileMetadata %>%
          dplyr::pull(scan)
 
-
       RT_of_maxTIC_MS2 <-
-         XIC_MS2b %>%
+         XIC_MS2_sum_trunc %>%
          purrr::map_depth(
             2,
             ~dplyr::filter(.x, int_sum == max(int_sum)) %>%
@@ -712,7 +725,7 @@ make_every_XIC_MS2 <-
             )
          ) %>%
          purrr::map2(
-            fragment_groups,
+            fragment_groups_trunc,
             ~purrr::map2(
                .x,
                .y,
@@ -721,53 +734,29 @@ make_every_XIC_MS2 <-
                   dplyr::filter(.y, abundance == max(abundance))
                )
             )
+         ) %>%
+         purrr::map_depth(
+            2,
+            ~dplyr::group_by(.x, charge) %>%
+               dplyr::group_split()
          )
-
-
-
-      # retention_times_sec <-
-      #    rawFileMetadata %>%
-      #    dplyr::mutate(rtinseconds = round(rtinseconds, digits = 3)) %>%
-      #    dplyr::pull(rtinseconds)
-
-
-      # fragment_groups3 <-
-      #    purrr::map_depth(
-      #       RT_of_maxTIC_MS2,
-      #       2,
-      #       ~tibble::tibble(
-      #          RT_of_maxTIC_MS2 = .x,
-      #          scan =
-      #             scan_nums[MALDIquant::match.closest(.x, rawFileMetadata$RT_min)]
-      #       )
-      #    )
 
 
       mz_to_read <-
          purrr::map_depth(
             fragments_maxTIC,
-            2,
+            3,
             ~dplyr::pull(.x, `m/z`)
          )
 
       scan_to_read <-
          purrr::map_depth(
             fragments_maxTIC,
-            2,
-            ~dplyr::pull(.x, scan)
+            3,
+            ~dplyr::pull(.x, scan) %>%
+               dplyr::first()
          )
 
-      # ion_names <-
-      #    fragments3 %>%
-      #    purrr::map(
-      #       ~as.list(.x$ion)
-      #    )
-      #
-      # ion_charges <-
-      #    fragments3 %>%
-      #    purrr::map(
-      #       ~as.list(.x$charge)
-      #    )
 
       scans_to_plot <-
          purrr::pmap(
@@ -780,59 +769,116 @@ make_every_XIC_MS2 <-
                   ..1,
                   ..2
                ),
-               ~rawR::readSpectrum(
-                  rawfile = rawFile,
-                  scan = ..1
-               ) %>%
-                  purrr::flatten() %>%
-                  {
-                     tibble::tibble(
-                        mz = .$mZ,
-                        intensity = .$intensity
-                     ) %>%
-                        dplyr::filter(
-                           mz >= ..2 - mz_window/2,
-                           mz <= ..2 + mz_window/2
-                        )
-                  }
+               ~purrr::pmap(
+                  list(
+                     ..1,
+                     ..2
+                  ),
+                  ~rawrr::readSpectrum(
+                     rawfile = rawFile,
+                     scan = ..1
+                  ) %>%
+                     purrr::flatten() %>%
+                     {
+                        tibble::tibble(
+                           mz = .$mZ,
+                           intensity = .$intensity
+                        ) %>%
+                           dplyr::filter(
+                              mz >= ..2 - mz_window/2,
+                              mz <= ..2 + mz_window/2
+                           )
+                     }
+               )
             )
          )
 
-      mz_all_abund_MS2 <-
-         purrr::map2(
-            iso_dist_cluster,
-            fragment_groups3,
-            ~dplyr::filter(.x, ion %in% .y$ion) %>%
-               dplyr::group_by(ion) %>%
-               dplyr::group_split() %>%
-               purrr::map(dplyr::pull, `m/z`)
+      # Make list of charges in fragments_maxTIC and filter iso_dist_cluster_trunc
+      # to remove unneeded charges
+
+      charges_to_retain <-
+         fragments_maxTIC %>%
+         purrr::map_depth(
+            3,
+            ~dplyr::pull(.x, charge)
+         ) %>%
+         purrr::map_depth(
+            2,
+            ~unlist(.x)
          )
 
-      # i = 1
-      # j = 5
-      #
-      # make_spectrum_MS2(
-      #    scans_to_plot[[i]][[j]],
-      #    mz,
-      #    intensity,
-      #    max_mz = mz_to_read[[i]][[j]],
-      #    scan = scan_to_read[[i]][[j]],
-      #    ion = ion_names[[i]][[j]],
-      #    charge = ion_charges[[i]][[j]],
-      #    theme = MStheme01
-      # )
+      iso_dist_cluster_trunc <-
+         purrr::map_depth(
+            iso_dist_cluster,
+            1,
+            ~dplyr::group_by(.x, ion) %>%
+               dplyr::group_split()
+         ) %>%
+         purrr::map_depth(
+            2,
+            ~dplyr::group_by(.x, charge) %>%
+               dplyr::group_split()
+         ) %>%
+         purrr::map2(
+            fragments_to_retain,
+            ~.x[.y]
+         ) %>%
+         purrr::map_depth(
+            2,
+            ~dplyr::bind_rows(.x)
+         ) %>%
+         purrr::map2(
+            charges_to_retain,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~dplyr::filter(.x, charge %in% .y)
+            )
+         ) %>%
+         purrr::map_depth(
+            2,
+            ~dplyr::group_by(.x, charge) %>%
+               dplyr::group_split()
+         )
+
+
+
+
+      ion_names_MS2 <-
+         iso_dist_cluster_trunc %>%
+         purrr::map_depth(
+            3,
+            ~dplyr::pull(.x, ion) %>%
+               dplyr::first()
+         )
+
+      ion_charges_MS2 <-
+         iso_dist_cluster_trunc %>%
+         purrr::map_depth(
+            3,
+            ~dplyr::pull(.x, charge) %>%
+               dplyr::first()
+         )
+
+
+      mz_all_abund_MS2 <-
+         purrr::map_depth(
+            iso_dist_cluster_trunc,
+            3,
+            ~dplyr::pull(.x, `m/z`)
+         )
 
       spectra_MS2 <-
          purrr::pmap(
             list(
                scans_to_plot,
-               as.list(names(fragments3)),
+               as.list(names(fragment_groups_trunc)),
                mz_to_read,
                scan_to_read,
-               ion_names,
-               ion_charges,
+               ion_names_MS2,
+               ion_charges_MS2,
                mz_all_abund_MS2,
-               mz_window_scaling*mz_window
+               mz_to_read
             ),
             ~purrr::pmap(
                list(
@@ -845,27 +891,43 @@ make_every_XIC_MS2 <-
                   ..7,
                   ..8
                ),
-               ~make_spectrum_MS2(
-                  ..1,
-                  mz,
-                  intensity,
-                  name = ..2,
-                  max_mz = ..3,
-                  scan = ..4,
-                  ion = ..5,
-                  charge = ..6,
-                  mz_all_abund = ..7,
-                  isotopologue_window = ..8,
-                  theme = MStheme01
+               ~purrr::pmap(
+                  list(
+                     ..1,
+                     ..2,
+                     ..3,
+                     ..4,
+                     ..5,
+                     ..6,
+                     ..7,
+                     ..8
+                  ),
+                  ~make_spectrum_MS2(
+                     ..1,
+                     mz,
+                     intensity,
+                     name = ..2,
+                     max_mz = ..3,
+                     scan = ..4,
+                     ion = ..5,
+                     charge = ..6,
+                     mz_all_abund = ..7,
+                     isotopologue_window = ..8/resPowerMS2,
+                     theme = MStheme01
+                  )
                )
             )
+         ) %>%
+         purrr::map_depth(
+            2,
+            ~ggplot_list_checker(.x)
          )
 
       message("Making tablegrob list for PDF output")
 
-      tablegrob_list_MS2 <-
-         spectra_MS2 %>%
-         unlist(recursive = FALSE) %>%
+      spectra_MS2_marrange <-
+         unlist(spectra_MS2, recursive = F) %>%
+         purrr::flatten() %>%
          gridExtra::marrangeGrob(
             grobs = .,
             ncol = 5,
@@ -876,13 +938,13 @@ make_every_XIC_MS2 <-
       ggplot2::ggsave(
          filename =
             fs::path(
-               outputDir,
+               saveDir,
                paste0(
                   fs::path_ext_remove(rawFileName),
-                  "_specZoom.pdf"
+                  "_specZoom_MS2.pdf"
                )
             ),
-         plot = tablegrob_list_MS2,
+         plot = spectra_MS2_marrange,
          width = 20,
          height = 12,
          limitsize = FALSE

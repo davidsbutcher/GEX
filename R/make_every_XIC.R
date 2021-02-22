@@ -23,6 +23,7 @@
 #' @return
 #' @export
 #'
+#' @import MSnbase
 #' @importFrom magrittr %>%
 #' @importFrom purrr reduce
 #'
@@ -40,6 +41,7 @@ make_every_XIC <-
       PTMformula_col_name1 = c("FormulaToAdd"),
       PTMformula_col_name2 = c("FormulaToSubtract"),
       isoAbund = c("12C" = 0.9893, "14N" = 0.99636),
+      resPowerMS1 = 300000,
       sample_n_pforms = NULL,
       mass_range = c(0,100000),
       target_charges = c(1:50),
@@ -47,8 +49,7 @@ make_every_XIC <-
       XIC_tol = 2,
       use_IAA = FALSE,
       save_output = TRUE,
-      abund_cutoff = 5,
-      hClust_height = 0.005
+      abund_cutoff = 15
    ) {
 
       # library(purrr)
@@ -393,6 +394,36 @@ make_every_XIC <-
             `if`(., stop("Problem with chemical formula"))
       )
 
+      # iso_dist <-
+      #    purrr::map2(
+      #       chemform_withH,
+      #       list(target_charges) %>% rep(length(target_seqs)),
+      #       ~purrr::map2(
+      #          .x,
+      #          .y,
+      #          ~enviPat::isopattern(
+      #             isotopes_to_use,
+      #             chemform=.x,
+      #             threshold=0.1,
+      #             plotit=FALSE,
+      #             charge=.y,
+      #             emass=0.00054858,
+      #             algo=1,
+      #             verbose = F
+      #          ) %>%
+      #             enviPat::envelope() %>%
+      #             purrr::modify_depth(1, tibble::as_tibble) %>%
+      #             purrr::map(
+      #                ~dplyr::filter(
+      #                   .x,
+      #                   `m/z` >= mz_range[[1]],
+      #                   `m/z` <= mz_range[[2]],
+      #                   abundance > abund_cutoff
+      #                )
+      #             )
+      #       )
+      #    )
+
       iso_dist <-
          purrr::map2(
             chemform_withH,
@@ -410,17 +441,29 @@ make_every_XIC <-
                   algo=1,
                   verbose = F
                ) %>%
-                  purrr::modify_depth(1, tibble::as_tibble) %>%
-                  purrr::map(
-                     ~dplyr::filter(
-                        .x,
-                        `m/z` >= mz_range[[1]],
-                        `m/z` <= mz_range[[2]],
-                        abundance > abund_cutoff
-                     )
+                  enviPat::envelope(
+                     dmz = "get",
+                     resolution = resPowerMS1,
+                     verbose = F
                   )
             )
+         ) %>%
+         purrr::modify_depth(
+            3,
+            ~new(
+               "Spectrum1",
+               mz = .x[,1],
+               intensity = .x[,2],
+               centroided = FALSE
+            ) %>%
+               MSnbase::pickPeaks(
+                  SNR = 1,
+                  method = "MAD",
+                  refineMz = "kNeighbors",
+                  k = 2
+               )
          )
+
 
       target_charges_list <-
          list(target_charges) %>%
@@ -428,7 +471,13 @@ make_every_XIC <-
 
       iso_dist_list_union <-
          iso_dist %>%
-         purrr::modify_depth(3, tibble::as_tibble) %>%
+         purrr::modify_depth(
+            3,
+            ~tibble::tibble(
+               `m/z` = MSnbase::mz(.x),
+               abundance = MSnbase::intensity(.x)
+            )
+         ) %>%
          purrr::map2(
             .y = target_charges_list,
             ~purrr::map2(
@@ -439,7 +488,8 @@ make_every_XIC <-
                   .y = .y,
                   ~dplyr::mutate(.x, charge = .y) %>%
                      dplyr::filter(
-                        `m/z` > mz_range[[1]] & `m/z` < mz_range[[2]]
+                        `m/z` > mz_range[[1]] & `m/z` < mz_range[[2]],
+                        abundance > abund_cutoff
                      )
                )
             )
@@ -468,28 +518,35 @@ make_every_XIC <-
             ~tibble_list_checker(.x)
          )
 
+      # iso_dist_list_union <-
+      #    purrr::modify_depth(
+      #       iso_dist_list_union,
+      #       2,
+      #       ~dplyr::mutate(
+      #          .x,
+      #          cluster =
+      #             cutree(
+      #                hclust(
+      #                   dist(`m/z`, method = "maximum"), method = "centroid"),
+      #                h = hClust_height
+      #             )
+      #       ) %>%
+      #          dplyr::group_by(cluster) %>%
+      #          dplyr::summarise(
+      #             `m/z` = mean(`m/z`),
+      #             abundance = sum(abundance),
+      #             charge = mean(charge)
+      #          ) %>%
+      #          dplyr::ungroup()
+      #    ) %>%
+      #    purrr::map(
+      #       purrr::reduce,
+      #       dplyr::union_all
+      #    )
+
       iso_dist_list_union <-
-         purrr::modify_depth(
-            iso_dist_list_union,
-            2,
-            ~dplyr::mutate(
-               .x,
-               cluster =
-                  cutree(
-                     hclust(
-                        dist(`m/z`, method = "maximum"), method = "centroid"),
-                     h = hClust_height
-                  )
-            ) %>%
-               dplyr::group_by(cluster) %>%
-               dplyr::summarise(
-                  `m/z` = mean(`m/z`),
-                  abundance = sum(abundance),
-                  charge = mean(charge)
-               ) %>%
-               dplyr::ungroup()
-         ) %>%
          purrr::map(
+            iso_dist_list_union,
             purrr::reduce,
             dplyr::union_all
          )

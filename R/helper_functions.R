@@ -227,7 +227,7 @@ make_spectrum_top1 =
             xmin = mz_all_abund-(isotopologue_window/2),
             xmax = mz_all_abund+(isotopologue_window/2),
             ymin = 0,
-            ymax = ymax,
+            ymax = theo_points$intensity,
             fill = "red",
             alpha = 0.25,
             linetype = "blank"
@@ -305,11 +305,6 @@ make_spectrum_MS2 =
    ) {
 
       {
-         xmin <-
-            df %>%
-            dplyr::filter({{mz}} == min({{mz}})) %>%
-            dplyr::pull({{mz}})
-
          xmax <-
             df %>%
             dplyr::filter({{mz}} == max({{mz}})) %>%
@@ -322,19 +317,22 @@ make_spectrum_MS2 =
             magrittr::extract(1)
 
 
+         if (length(xmax) == 0) {
+
+            xmax <- max_mz
+
+         }
+
+
          if (length(ymax) > 1) {
 
             ymax <- ymax[[1]]
 
-         }
-
-         if (length(ymax) == 0) {
+         } else if (length(ymax) == 0) {
 
             ymax <- 10
 
-         }
-
-         if (all.equal(0, ymax) == TRUE) {
+         } else if (all.equal(0, ymax) == TRUE) {
 
             ymax <- 10
 
@@ -367,7 +365,7 @@ make_spectrum_MS2 =
             linetype = "blank"
          ) +
          ggplot2::lims(
-            x = c(xmin, xmax),
+            # x = c(xmin, xmax),
             y = c(0, ymax)
          ) +
          ggplot2::guides(
@@ -398,7 +396,7 @@ get_maxY_in_Xrange <-
 
 get_maxY_in_Xrange_vector <-
    function(
-      df, x, y, mz = 0, mz_window, mz_window_scaling
+      df, x, y, mz = 0, res_power
    ) {
 
       out <- vector(mode = "numeric", length = length(mz))
@@ -407,8 +405,8 @@ get_maxY_in_Xrange_vector <-
 
          xrange <-
             c(
-               mz[[i]] - (mz_window*mz_window_scaling),
-               mz[[i]] + (mz_window*mz_window_scaling)
+               mz[[i]] - (mz[[i]]/res_power),
+               mz[[i]] + (mz[[i]]/res_power)
             )
 
          out[[i]] <-
@@ -427,7 +425,7 @@ get_maxY_in_Xrange_vector <-
 
 get_maxX_in_Xrange_vector <-
    function(
-      df, x, y, mz = 0, mz_window, mz_window_scaling
+      df, x, y, mz = 0, res_power
    ) {
 
       out <- vector(mode = "numeric", length = length(mz))
@@ -436,8 +434,8 @@ get_maxX_in_Xrange_vector <-
 
          xrange <-
             c(
-               mz[[i]] - (mz_window*mz_window_scaling),
-               mz[[i]] + (mz_window*mz_window_scaling)
+               mz[[i]] - (mz[[i]]/res_power),
+               mz[[i]] + (mz[[i]]/res_power)
             )
 
          out[[i]] <-

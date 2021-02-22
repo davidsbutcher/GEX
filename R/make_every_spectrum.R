@@ -2,8 +2,6 @@
 #'
 #' @param make_every_XIC_output Direct output from make_every_XIC.
 #' @param mz_window Width of the m/z window to be used to make mini spectra.
-#' @param mz_window_scaling Scaling factor for window for determination of intensity
-#' for individual isotopologue peaks. Multiplied by mz_window value.
 #' @param MSoutputWidth Width of png output. Only used is makePNG is TRUE.
 #' @param MSoutputDPI DPI of png output. Only used is makePNG is TRUE.
 #' @param makePNG Whether to make png output. Probably deprecated soon.
@@ -20,7 +18,6 @@ make_every_spectrum <-
    function(
       make_every_XIC_output,
       mz_window = 3,
-      mz_window_scaling = 0.00333,
       SN_cutoff = 10,
       mean_cosine_sim_cutoff = 0.8,
       resPowerMS1 = 300000,
@@ -378,7 +375,7 @@ make_every_spectrum <-
                   y = intensity,
                   xrange =
                      c(
-                        .y - (mz_window*mz_window_scaling), .y + (mz_window*mz_window_scaling)
+                        .y - (.y/resPowerMS1), .y + (.y/resPowerMS1)
                      )
                )
             )
@@ -405,8 +402,7 @@ make_every_spectrum <-
                   x = mz,
                   y = intensity,
                   mz = .y,
-                  mz_window = mz_window,
-                  mz_window_scaling = mz_window_scaling
+                  res_power = resPowerMS1
                )
             )
          ) %>%
@@ -432,8 +428,7 @@ make_every_spectrum <-
                   x = mz,
                   y = intensity,
                   mz = .y,
-                  mz_window = mz_window,
-                  mz_window_scaling = mz_window_scaling
+                  res_power = resPowerMS1
                )
             )
          ) %>%
@@ -568,8 +563,15 @@ make_every_spectrum <-
             ~fix_list_length(.x, .y)
          )
 
+      ## Save score_MFA data for further analysis, TESTING PURPOSES ONLY
 
+      saveRDS(score_MFA, paste0(saveDir, "/score_MFA.rds"))
 
+      saveRDS(results_isotopologueMZ, paste0(saveDir, "/results_isotopologueMZ.rds"))
+      saveRDS(mz_all_abund, paste0(saveDir, "/mz_all_abund.rds"))
+
+      saveRDS(SN_estimate_obs, paste0(saveDir, "/SN_estimate_obs.rds"))
+      saveRDS(SN_estimate_theo, paste0(saveDir, "/SN_estimate_theo.rds"))
 
       ## Make table with all charge state TICs
 
@@ -654,7 +656,8 @@ make_every_spectrum <-
                cosine_sims,
                mz_all_abund,
                iso_abund_theoretical_scaled,
-               mz_window_scaling*mz_window,
+               # mz_window_scaling*mz_window,
+               mz_all_abund,
                score_MFA
             ),
             ~purrr::pmap(
@@ -687,7 +690,7 @@ make_every_spectrum <-
                   cosine_sims = ..8,
                   mz_all_abund = ..9,
                   iso_abund_theoretical_scaled = ..10,
-                  isotopologue_window = ..11,
+                  isotopologue_window = 2*(..11/resPowerMS1),
                   theme = MStheme01,
                   score_mfa = ..12
                )
