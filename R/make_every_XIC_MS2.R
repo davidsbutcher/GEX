@@ -1268,7 +1268,7 @@ make_every_XIC_MS2 <-
                ~purrr::pmap(
                   list(
                      ..1[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff], # By subsetting this way, spectra
-                     ..2[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff], # with low scoreMFAs are removed
+                     rep(..2, length(..3))[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff], # with low scoreMFAs are removed
                      ..3[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
                      ..4[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
                      ..5[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
