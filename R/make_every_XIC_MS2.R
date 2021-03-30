@@ -10,7 +10,6 @@
 #' @param PTMformula_col_name1
 #' @param PTMformula_col_name2
 #' @param isoAbund
-#' @param fragment_mass_range
 #' @param fragment_charges
 #' @param fragment_mz_range
 #' @param fragment_pos_cutoff
@@ -18,7 +17,6 @@
 #' @param use_IAA
 #' @param save_output
 #' @param abund_cutoff
-#' @param hClust_height
 #'
 #' @return
 #' @export
@@ -33,24 +31,26 @@ make_every_XIC_MS2 <-
       rawFileName = NULL,
       targetSeqData = NULL,
       outputDir = getwd(),
-      target_col_name = c("UNIPROTKB"),
-      target_sequence_col_name = c("ProteoformSequence"),
-      PTMname_col_name = c("PTMname"),
-      PTMformula_col_name1 = c("FormulaToAdd"),
-      PTMformula_col_name2 = c("FormulaToSubtract"),
+      target_col_name = "UNIPROTKB",
+      target_sequence_col_name = "ProteoformSequence",
+      PTMname_col_name = "PTMname",
+      PTMformula_col_name1 = "FormulaToAdd",
+      PTMformula_col_name2 = "FormulaToSubtract",
       isoAbund = c("12C" = 0.9893, "14N" = 0.99636),
-      fragment_mass_range = c(0,100000),
-      fragment_charges = c(1:5),
-      fragment_mz_range = c(600,2000),
-      fragment_pos_cutoff = 20,
+      fragment_charges = c(1:50),
+      fragment_types = c("b", "y"),
+      fragment_mz_range = c(300,2000),
+      fragment_pos_cutoff = c(1, 50),
       XIC_tol_MS2 = 10,
-      XIC_TIC_cutoff = 25000,
+      XIC_cutoff = 0.0005,
+      scoreMFAcutoff = 0.3,
+      cosinesimcutoff = 0.99,
       resPowerMS2 = 150000,
-      mz_window = 3,
+      isotopologue_window_multiplier = 6,
+      mz_window = 5,
       use_IAA = FALSE,
       save_output = TRUE,
-      abund_cutoff = 5,
-      hClust_height = 0.005
+      abund_cutoff = 5
    ) {
 
       # Load rawrr package
@@ -194,38 +194,28 @@ make_every_XIC_MS2 <-
 
       data(isotopes, package = "enviPat")
 
-      isotopes_to_use <- isotopes
-
       # Get positions of specific isotopes in dataframe
 
-      index_12C <-
-         which(isotopes_to_use$isotope == "12C") %>%
-         .[[1]]
-
-      index_13C <-
-         which(isotopes_to_use$isotope == "13C") %>%
-         .[[1]]
-
-      index_14N <-
-         which(isotopes_to_use$isotope == "14N") %>%
-         .[[1]]
-
-      index_15N <-
-         which(isotopes_to_use$isotope == "15N") %>%
-         .[[1]]
+      indices <-
+         list(
+            "12C" = which(isotopes$isotope == "12C") %>% .[[1]],
+            "13C" = which(isotopes$isotope == "13C") %>% .[[1]],
+            "14N" = which(isotopes$isotope == "14N") %>% .[[1]],
+            "15N" = which(isotopes$isotope == "15N") %>% .[[1]]
+         )
 
       # Replace values in dataframe with supplied values
 
-      isotopes_to_use$abundance[index_12C] <-
+      isotopes$abundance[indices[["12C"]]] <-
          isoAbund[which(names(isoAbund) == "12C")]
 
-      isotopes_to_use$abundance[index_13C] <-
+      isotopes$abundance[indices[["13C"]]] <-
          1 - isoAbund[which(names(isoAbund) == "12C")]
 
-      isotopes_to_use$abundance[index_14N] <-
+      isotopes$abundance[indices[["14N"]]] <-
          isoAbund[which(names(isoAbund) == "14N")]
 
-      isotopes_to_use$abundance[index_15N] <-
+      isotopes$abundance[indices[["15N"]]] <-
          1 - isoAbund[which(names(isoAbund) == "14N")]
 
       # Process target sequences ------------------------------------------------
@@ -260,7 +250,7 @@ make_every_XIC_MS2 <-
                ~MSnbase::calculateFragments(
                   .x,
                   z = .y,
-                  type=c("b", "y"),
+                  type = fragment_types,
                   neutralLoss = NULL
                ) %>%
                   tibble::as_tibble() %>%
@@ -280,7 +270,10 @@ make_every_XIC_MS2 <-
             ~dplyr::pull(.x, seq) %>%
                as.list() %>%
                purrr::map(
-                  ~OrgMassSpecR::ConvertPeptide(.x) %>%
+                  ~OrgMassSpecR::ConvertPeptide(
+                     .x,
+                     IAA = use_IAA
+                  ) %>%
                      unlist() %>%
                      purrr::imap_chr(
                         ~paste0(.y, .x, collapse = '')
@@ -330,15 +323,22 @@ make_every_XIC_MS2 <-
             )
          )
 
+      # Prepare fragments data for combination with iso_dist_MS2 later
+
+      fragments3 <-
+         fragments2 %>%
+         purrr::map(
+            ~dplyr::group_by(.x, type, pos, mz) %>%
+               dplyr::group_split()
+         )
+
       # Generate isotopic distributions ---------
 
-
-      iso_dist <-
-         purrr::map_depth(
+      iso_dist_MS2 <-
+         purrr::map(
             fragments2,
-            1,
             ~enviPat::isopattern(
-               isotopes_to_use,
+               isotopes,
                chemform=.x$chemform,
                threshold=0.1,
                plotit=FALSE,
@@ -347,63 +347,82 @@ make_every_XIC_MS2 <-
                algo=1,
                verbose = F
             ) %>%
-               {
-                  purrr::pmap(
-                     list(
-                        .,
-                        .x$z,
-                        .x$ion
-                     ),
-                     ~tibble::as_tibble(..1) %>%
-                        dplyr::select(`m/z`, abundance) %>%
-                        dplyr::filter(abundance > abund_cutoff) %>%
-                        dplyr::mutate(
-                           charge = ..2,
-                           ion = ..3
-                        )
-                  ) %>%
-                     purrr::reduce(dplyr::union_all)
-               }
+               enviPat::envelope(
+                  dmz = "get",
+                  resolution = resPowerMS2,
+                  verbose = F
+               )
+         ) %>%
+         purrr::modify_depth(
+            2,
+            ~new(
+               "Spectrum1",
+               mz = .x[,1],
+               intensity = .x[,2],
+               centroided = FALSE
+            ) %>%
+               MSnbase::pickPeaks(
+                  SNR = 1,
+                  method = "MAD",
+                  refineMz = "kNeighbors",
+                  k = 2
+               )
+         ) %>%
+         purrr::modify_depth(
+            2,
+            ~tibble::tibble(
+               `m/z` = MSnbase::mz(.x),
+               abundance = MSnbase::intensity(.x)
+            ) %>%
+               dplyr::filter(abundance > abund_cutoff)
          )
+
+
+      iso_dist_MS2_cluster <-
+         purrr::map2(
+            iso_dist_MS2,
+            fragments3,
+            ~purrr::map2(
+               .x = .x,
+               .y = .y,
+               ~dplyr::mutate(
+                  .x,
+                  charge = .y$z,
+                  ion = .y$ion
+               )
+            )
+         ) %>%
+         purrr::map(
+            dplyr::bind_rows
+         )
+
+
 
       # Cluster isotopic distributions
 
-      iso_dist_cluster <-
-         purrr::imap(
-            iso_dist,
-            ~dplyr::mutate(
-               .x,
-               cluster =
-                  cutree(
-                     hclust(
-                        dist(
-                           `m/z`, method = "maximum"), method = "centroid"
-                     ),
-                     h = hClust_height
-                  )
-            ) %>%
-               dplyr::group_by(cluster) %>%
-               dplyr::summarise(
-                  `m/z` = mean(`m/z`),
-                  abundance = sum(abundance), # All clustered peak abundances are summed
-                  charge = mean(charge),
-                  ion = dplyr::first(ion)
-               ) %>%
-               dplyr::filter(charge %% 1 == 0) %>% # Remove all incorrectly clustered peaks
-               dplyr::ungroup()
-         )
-
-      # Split all isotopic distributions by ion name
-
       fragment_groups <-
          purrr::map(
-            iso_dist_cluster,
-            # ~dplyr::group_by(.x, ion, charge) %>%
+            iso_dist_MS2_cluster,
             ~dplyr::group_by(.x, ion) %>%
                dplyr::group_split()
          )
 
       # Read XICs --------
+
+      # Get max TIC for MS2s from rawfile
+
+      max_TIC_MS2 <-
+         rawrr::readChromatogram(
+            rawfile = rawFile,
+            filter = "ms2",
+            type = "tic",
+            tol = XIC_tol_MS2
+         ) %>%
+         .$intensities %>%
+         max()
+
+      XIC_TIC_cutoff <-
+         max_TIC_MS2 * XIC_cutoff
 
       XIC_MS2 <-
          purrr::map(
@@ -414,6 +433,7 @@ make_every_XIC_MS2 <-
                   rawfile = rawFile,
                   mass = .x$`m/z`,
                   filter = "ms2",
+                  type = "xic",
                   tol = XIC_tol_MS2
                )
             )
@@ -426,23 +446,6 @@ make_every_XIC_MS2 <-
 
       # Process XICs by replacing NULL tibbles and adding together all XICs
       # for same ion and charge
-
-      # charges_to_delete_A <-
-      #    XIC_MS2 %>%
-      #    purrr::map_depth(
-      #       3,
-      #       ~tibble::tibble(
-      #          times = .x$times,
-      #          intensities = .x$intensities
-      #       )
-      #    )
-      #
-      # charges_to_delete_B <-
-      #    purrr::map_depth(
-      #       charges_to_delete_A,
-      #       3,
-      #       ~which(nrow(.x) == 0)
-      #    )
 
       XIC_MS2_sum <-
          XIC_MS2 %>%
@@ -474,12 +477,27 @@ make_every_XIC_MS2 <-
       # Remove fragments with TIC < XIC_TIC_cutoff from
       # fragment_groups and XIC_MS2_sum
 
+      # fragments_to_retain <-
+      #    XIC_MS2_sum %>%
+      #    purrr::map_depth(
+      #       2,
+      #       ~dplyr::filter(.x, int_sum == max(int_sum)) %>%
+      #          dplyr::pull(int_sum)
+      #    ) %>%
+      #    purrr::map(
+      #       unlist
+      #    ) %>%
+      #    purrr::map(
+      #       ~which(.x > XIC_TIC_cutoff)
+      #    )
+
       fragments_to_retain <-
          XIC_MS2_sum %>%
          purrr::map_depth(
             2,
             ~dplyr::filter(.x, int_sum == max(int_sum)) %>%
-               dplyr::pull(int_sum)
+               dplyr::pull(int_sum) %>%
+               dplyr::first()
          ) %>%
          purrr::map(
             unlist
@@ -517,7 +535,7 @@ make_every_XIC_MS2 <-
          purrr::map_depth(
             2,
             ~dplyr::pull(.x, charge) %>%
-               dplyr::first()
+               unique()
          )
 
       XIC_maxTIC_MS2 <-
@@ -561,136 +579,113 @@ make_every_XIC_MS2 <-
          )
 
 
-      XIC_plots_MS2_marrange <-
-         gridExtra::marrangeGrob(
-            grobs = purrr::flatten(XIC_plots_MS2),
-            ncol = 5,
-            nrow = 3,
-            top = rawFileName
+      if (save_output == TRUE) {
+
+
+         XIC_plots_MS2_marrange <-
+            gridExtra::marrangeGrob(
+               grobs = purrr::flatten(XIC_plots_MS2),
+               ncol = 5,
+               nrow = 3,
+               top = rawFileName
+            )
+
+         # Save XIC results ------
+
+         ## Create save directory ---------------------------------------------------
+
+         systime <- format(Sys.time(), "%Y%m%d")
+         systime2 <- Sys.time()
+
+         saveDir <-
+            fs::path(
+               outputDir,
+               paste0(
+                  systime,
+                  "_",
+                  fs::path_ext_remove(rawFileName),
+                  "_",
+                  length(target_seqs),
+                  "seqs_MS2"
+               )
+            ) %>%
+            stringr::str_trunc(246, "right", ellipsis = "")
+
+
+         if (dir.exists(saveDir) == FALSE) dir.create(saveDir)
+
+         ## Save target seqs -----
+
+         message(
+            paste0(
+               "Saving target sequences to ",
+               saveDir,
+               "/",
+               fs::path_ext_remove(
+                  stringr::str_trunc(
+                     rawFileName, 90, "right", ellipsis = ""
+                  )
+               ),
+               '_seqs.csv'
+            )
          )
 
-      # Save XIC results ------
-
-      ## Create save directory ---------------------------------------------------
-
-      systime <- format(Sys.time(), "%Y%m%d")
-
-      if (all(isoAbund == c("12C" = 0.9893, "14N" = 0.99636))) {
-
-         saveDir <-
-            fs::path(
-               outputDir,
-               paste0(
-                  fs::path_ext_remove(rawFileName),
-                  "_",
-                  length(target_seqs),
-                  "seqs_IsoNorm"
+         readr::write_csv(
+            target_seqs_df,
+            path =
+               fs::path(
+                  saveDir,
+                  paste0(
+                     fs::path_ext_remove(
+                        stringr::str_trunc(
+                           rawFileName, 90, "right", ellipsis = ""
+                        )
+                     ),
+                     '_seqs_MS2.csv'
+                  )
                )
-            ) %>%
-            stringr::str_trunc(246, "right", ellipsis = "")
+         )
 
-      } else if (isoAbund[[1]] < 0.9893 | isoAbund[[2]] < 0.99636) {
+         ## Save theo iso distributions -----
 
-         saveDir <-
-            fs::path(
-               outputDir,
-               paste0(
-                  fs::path_ext_remove(rawFileName),
-                  "_",
-                  length(target_seqs),
-                  "seqs_IsoDep"
+         writexl::write_xlsx(
+            iso_dist_MS2_cluster,
+            path =
+               fs::path(
+                  saveDir,
+                  paste0(
+                     fs::path_ext_remove(
+                        stringr::str_trunc(
+                           rawFileName, 90, "right", ellipsis = ""
+                        )
+                     ),
+                     '_isodist_MS2.xlsx'
+                  )
                )
-            ) %>%
-            stringr::str_trunc(246, "right", ellipsis = "")
+         )
 
-      } else {
 
-         saveDir <-
-            fs::path(
-               outputDir,
-               paste0(
-                  fs::path_ext_remove(rawFileName),
-                  "_",
-                  length(target_seqs),
-                  "seqs"
-               )
-            ) %>%
-            stringr::str_trunc(246, "right", ellipsis = "")
+         ## Save XIC plots -----
+
+         ggplot2::ggsave(
+            filename =
+               fs::path(
+                  saveDir,
+                  paste0(
+                     fs::path_ext_remove(
+                        stringr::str_trunc(
+                           rawFileName, 90, "right", ellipsis = ""
+                        )
+                     ),
+                     '_MS2_XICs.pdf'
+                  )
+               ),
+            plot = XIC_plots_MS2_marrange,
+            width = 20,
+            height = 12,
+         )
 
       }
-
-      if (dir.exists(saveDir) == FALSE) dir.create(saveDir)
-
-      ## Save target seqs -----
-
-      message(
-         paste0(
-            "Saving target sequences to ",
-            saveDir,
-            "/",
-            fs::path_ext_remove(
-               stringr::str_trunc(
-                  rawFileName, 90, "right", ellipsis = ""
-               )
-            ),
-            '_seqs.csv'
-         )
-      )
-
-      readr::write_csv(
-         target_seqs_df,
-         path =
-            fs::path(
-               saveDir,
-               paste0(
-                  fs::path_ext_remove(
-                     stringr::str_trunc(
-                        rawFileName, 90, "right", ellipsis = ""
-                     )
-                  ),
-                  '_seqs_MS2.csv'
-               )
-            )
-      )
-
-      ## Save theo iso distributions -----
-
-      writexl::write_xlsx(
-         iso_dist_cluster,
-         path =
-            fs::path(
-               saveDir,
-               paste0(
-                  fs::path_ext_remove(
-                     stringr::str_trunc(
-                        rawFileName, 90, "right", ellipsis = ""
-                     )
-                  ),
-                  '_isodist_MS2.xlsx'
-               )
-            )
-      )
-
-
-      ## Save XIC plots -----
-
-      ggplot2::ggsave(
-         filename =
-            fs::path(
-               saveDir,
-               paste0(
-                  fs::path_ext_remove(
-                     stringr::str_trunc(
-                        rawFileName, 90, "right", ellipsis = ""
-                     )
-                  ),
-                  '_MS2_XICs.pdf'
-               )
-            ),
-         plot = XIC_plots_MS2_marrange,
-         width = 20,
-         height = 12,
-      )
 
 
       # Extract scans and make spectra ------------------------------------------
@@ -731,7 +726,8 @@ make_every_XIC_MS2 <-
                .y,
                ~dplyr::bind_cols(
                   .x,
-                  dplyr::filter(.y, abundance == max(abundance))
+                  dplyr::group_by(.y, charge) %>%
+                  dplyr::filter(abundance == max(abundance))
                )
             )
          ) %>%
@@ -741,6 +737,8 @@ make_every_XIC_MS2 <-
                dplyr::group_split()
          )
 
+      # mz_to_read is really the m/z of the theoretical most abundant
+      # fragment ion peak
 
       mz_to_read <-
          purrr::map_depth(
@@ -756,6 +754,11 @@ make_every_XIC_MS2 <-
             ~dplyr::pull(.x, scan) %>%
                dplyr::first()
          )
+
+      browser()
+
+      # Read the scan with max TIC for each fragment and subset it to the
+      # desired range
 
 
       scans_to_plot <-
@@ -793,6 +796,42 @@ make_every_XIC_MS2 <-
             )
          )
 
+      # Get noise for every scan being plotted to use for S/N calculation
+
+      noise_obs_MS2 <-
+         purrr::pmap(
+            list(
+               scan_to_read,
+               mz_to_read
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1,
+                     ..2
+                  ),
+                  ~rawrr::readSpectrum(
+                     rawfile = rawFile,
+                     scan = ..1
+                  ) %>%
+                     purrr::flatten() %>%
+                     {
+                        MALDIquant::createMassSpectrum(
+                           mass = .[["mZ"]],
+                           intensity = .[["intensity"]]
+                        ) %>%
+                           MALDIquant::estimateNoise(method = "MAD") %>%
+                           .[,2] %>%
+                           .[[1]]
+                     }
+               )
+            )
+         )
+
       # Make list of charges in fragments_maxTIC and filter iso_dist_cluster_trunc
       # to remove unneeded charges
 
@@ -809,7 +848,7 @@ make_every_XIC_MS2 <-
 
       iso_dist_cluster_trunc <-
          purrr::map_depth(
-            iso_dist_cluster,
+            iso_dist_MS2_cluster,
             1,
             ~dplyr::group_by(.x, ion) %>%
                dplyr::group_split()
@@ -842,7 +881,332 @@ make_every_XIC_MS2 <-
          )
 
 
+      # Extract maxY and maxX from within isotopologue windows to use for
+      # cosine sim and scoreMFA scoring
 
+
+      mz_obs_MS2 <-
+         purrr::pmap(
+            list(
+               scans_to_plot,
+               iso_dist_cluster_trunc
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1 = ..1,
+                  ..2 = ..2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1 = ..1,
+                     ..2 = ..2
+                  ),
+                  ~get_maxX_in_Xrange_vector(
+                     df = ..1,
+                     x = mz,
+                     y = intensity,
+                     mz = ..2[["m/z"]],
+                     res_power = resPowerMS2,
+                     isotopologueWinMultiplier = isotopologue_window_multiplier
+                  )
+               )
+            )
+         )
+
+
+      intensity_obs_MS2 <-
+         purrr::pmap(
+            list(
+               scans_to_plot,
+               iso_dist_cluster_trunc
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1 = ..1,
+                  ..2 = ..2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1 = ..1,
+                     ..2 = ..2
+                  ),
+                  ~get_maxY_in_Xrange_vector(
+                     df = ..1,
+                     x = mz,
+                     y = intensity,
+                     mz = ..2[["m/z"]],
+                     res_power = resPowerMS2,
+                     isotopologueWinMultiplier = isotopologue_window_multiplier
+                  )
+               )
+            )
+         )
+
+
+      mz_theo_MS2 <-
+         purrr::map_depth(
+            iso_dist_cluster_trunc,
+            3,
+            ~dplyr::pull(.x, `m/z`)
+         )
+
+      intensity_theo_MS2 <-
+         purrr::map_depth(
+            iso_dist_cluster_trunc,
+            3,
+            ~dplyr::pull(.x, abundance)
+         )
+
+      # Calculate scaling factor for intensity_theo_MS2
+
+      intensity_theo_scaling_factors <-
+         purrr::map2(
+            intensity_obs_MS2,
+            intensity_theo_MS2,
+            ~purrr::map2(
+               .x = .x,
+               .y = .y,
+               ~purrr::map2(
+                  .x = .x,
+                  .y = .y,
+                  ~max(.x)/max(.y)
+               )
+            )
+         )
+
+      intensity_theo_MS2_scaled <-
+         purrr::map2(
+            intensity_theo_MS2,
+            intensity_theo_scaling_factors,
+            ~purrr::map2(
+               .x = .x,
+               .y = .y,
+               ~purrr::map2(
+                  .x = .x,
+                  .y = .y,
+                  ~.x*.y
+               )
+            )
+         )
+
+      # Calculate S/N for observed and theoretical intensities
+
+
+      SN_estimate_obs_MS2 <-
+         purrr::map2(
+            intensity_obs_MS2,
+            noise_obs_MS2,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~purrr::map2(
+                  .x,
+                  .y,
+                  ~(.x/.y) %>%
+                     {if (length(.) == 0 & is.nan(.) & is.null(.)) 0 else .}
+               )
+            )
+         ) %>%
+         purrr::map(
+            ~purrr::map_if(
+               .x,
+               ~length(.x) == 0,
+               ~0
+            )
+         )
+
+
+      SN_estimate_theo_MS2 <-
+         purrr::map2(
+            intensity_theo_MS2_scaled,
+            noise_obs_MS2,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~purrr::map2(
+                  .x,
+                  .y,
+                  ~(.x/.y) %>%
+                     {if (length(.) == 0 & is.nan(.) & is.null(.)) 0 else .}
+               )
+            )
+         ) %>%
+         purrr::map(
+            ~purrr::map_if(
+               .x,
+               ~length(.x) == 0,
+               ~0
+            )
+         )
+
+
+
+      # Attempt to determine RP for each isotopologue peak
+
+      rp_obs_MS2 <-
+         purrr::pmap(
+            list(
+               scans_to_plot,
+               iso_dist_cluster_trunc
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1 = ..1,
+                  ..2 = ..2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1 = ..1,
+                     ..2 = ..2
+                  ),
+                  ~get_rp_in_Xrange_vector(
+                     df = ..1,
+                     x = mz,
+                     y = intensity,
+                     mz = ..2[["m/z"]],
+                     res_power = resPowerMS2,
+                     isotopologueWinMultiplier = isotopologue_window_multiplier
+                  )
+               )
+            )
+         )
+
+      # Convert all resolving powers into a data frame for linear modeling
+
+      rp_obs_MS2_df <-
+         purrr::map2(
+            rp_obs_MS2,
+            mz_to_read,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~tibble::tibble(
+                  rp = .x,
+                  mz = .y
+               ) %>%
+                  tidyr::unnest(cols = c(rp, mz)) %>%
+                  dplyr::filter(rp != 0)
+            )
+         ) %>%
+         dplyr::bind_rows() %>%
+         dplyr::arrange(mz)
+
+
+      # Calculate linear model for RP based on determined non-zero values
+
+      x <- rp_obs_MS2_df$mz
+      y <- rp_obs_MS2_df$rp
+
+      resolving_power_model_MS2 <-
+         fit <- lm(y ~ I(1/x))
+
+      # Calculate theoretical resolving powers for every isotopologue peak
+
+      rp_theo_MS2 <-
+         purrr::map_depth(
+            mz_theo_MS2,
+            3,
+            ~predict(
+               resolving_power_model_MS2,
+               newdata =
+                  data.frame(
+                     x = .x
+                  )
+            )
+         )
+
+      # Replace all zeros in rp_obs_MS1 with theoretical values from the fit
+
+      rp_obs_theo_hybrid_MS2 <-
+         purrr::map2(
+            rp_obs_MS2,
+            rp_theo_MS2,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~purrr::map2(
+                  .x,
+                  .y,
+                  ~purrr::map2_dbl(
+                     .x,
+                     .y,
+                     ~{if (.x == 0) .y else .x}
+                  )
+               )
+            )
+         )
+
+
+
+      # Calculate ScoreMFA
+
+      score_MFA_MS2 <-
+         purrr::pmap(
+            list(
+               mz_obs_MS2,
+               mz_theo_MS2,
+               rp_obs_theo_hybrid_MS2,
+               SN_estimate_obs_MS2,
+               SN_estimate_theo_MS2
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3,
+                  ..4,
+                  ..5
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1,
+                     ..2,
+                     ..3,
+                     ..4,
+                     ..5
+                  ),
+                  ~ScoreMFA(
+                     ..1,
+                     ..2,
+                     ..3,
+                     ..4,
+                     ..5,
+                     rp_mult = 2
+                  ) %>%
+                     {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
+               )
+            )
+         )
+
+      # Calculate cosine similarity
+
+      cosine_sim_MS2 <-
+         purrr::pmap(
+            list(
+               intensity_obs_MS2,
+               intensity_theo_MS2_scaled
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1,
+                     ..2
+                  ),
+                  ~calculate_cosine_similarity(
+                     ..1,
+                     ..2
+                  ) %>%
+                     {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
+               )
+            )
+         )
+
+
+      # Prepare data for plotting
 
       ion_names_MS2 <-
          iso_dist_cluster_trunc %>%
@@ -860,14 +1224,6 @@ make_every_XIC_MS2 <-
                dplyr::first()
          )
 
-
-      mz_all_abund_MS2 <-
-         purrr::map_depth(
-            iso_dist_cluster_trunc,
-            3,
-            ~dplyr::pull(.x, `m/z`)
-         )
-
       spectra_MS2 <-
          purrr::pmap(
             list(
@@ -877,8 +1233,12 @@ make_every_XIC_MS2 <-
                scan_to_read,
                ion_names_MS2,
                ion_charges_MS2,
-               mz_all_abund_MS2,
-               mz_to_read
+               mz_to_read,
+               score_MFA_MS2,
+               mz_theo_MS2,
+               intensity_theo_MS2_scaled,
+               cosine_sim_MS2,
+               SN_estimate_obs_MS2
             ),
             ~purrr::pmap(
                list(
@@ -889,30 +1249,41 @@ make_every_XIC_MS2 <-
                   ..5,
                   ..6,
                   ..7,
-                  ..8
+                  ..8,
+                  ..9,
+                  ..10,
+                  ..11,
+                  ..12
                ),
                ~purrr::pmap(
                   list(
-                     ..1,
-                     ..2,
-                     ..3,
-                     ..4,
-                     ..5,
-                     ..6,
-                     ..7,
-                     ..8
+                     ..1[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff], # By subsetting this way, spectra
+                     ..2[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff], # with low scoreMFAs are removed
+                     ..3[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..4[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..5[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..6[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..7[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..8[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..9[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..10[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..11[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
+                     ..12[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff]
                   ),
                   ~make_spectrum_MS2(
                      ..1,
-                     mz,
-                     intensity,
                      name = ..2,
                      max_mz = ..3,
                      scan = ..4,
                      ion = ..5,
                      charge = ..6,
-                     mz_all_abund = ..7,
-                     isotopologue_window = ..8/resPowerMS2,
+                     isotopologue_window = isotopologue_window_multiplier*(..7/resPowerMS2),
+                     ScoreMFA = ..8,
+                     cosine_sim = ..11,
+                     xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
+                     mz_theo = ..9,
+                     int_theo = ..10,
+                     sn_estimate = ..12,
                      theme = MStheme01
                   )
                )
@@ -921,34 +1292,170 @@ make_every_XIC_MS2 <-
          purrr::map_depth(
             2,
             ~ggplot_list_checker(.x)
+         ) %>%
+         purrr::map(
+            purrr::compact
          )
 
-      message("Making tablegrob list for PDF output")
+      # Put all of the info together into a data frame
 
-      spectra_MS2_marrange <-
-         unlist(spectra_MS2, recursive = F) %>%
-         purrr::flatten() %>%
-         gridExtra::marrangeGrob(
-            grobs = .,
-            ncol = 5,
-            nrow = 3,
-            top = paste0(rawFileName)
-         )
-
-      ggplot2::ggsave(
-         filename =
-            fs::path(
-               saveDir,
-               paste0(
-                  fs::path_ext_remove(rawFileName),
-                  "_specZoom_MS2.pdf"
-               )
+      spectra_MS2_dataframe <-
+         purrr::pmap(
+            list(
+               as.list(names(fragment_groups_trunc)),
+               scan_to_read,
+               mz_obs_MS2,
+               mz_theo_MS2,
+               ion_names_MS2,
+               ion_charges_MS2,
+               score_MFA_MS2,
+               cosine_sim_MS2,
+               SN_estimate_obs_MS2
             ),
-         plot = spectra_MS2_marrange,
-         width = 20,
-         height = 12,
-         limitsize = FALSE
-      )
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3,
+                  ..4,
+                  ..5,
+                  ..6,
+                  ..7,
+                  ..8,
+                  ..9
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff], # By subsetting this way, spectra
+                     ..2[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff], # with low scoreMFAs are removed
+                     ..3[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
+                     ..4[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
+                     ..5[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
+                     ..6[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
+                     ..7[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
+                     ..8[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
+                     ..9[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff]
+                  ),
+                  ~tibble::tibble(
+                     raw_filename = rawFileName,
+                     sequence_name = ..1,
+                     scan = ..2,
+                     max_obs_mz = max(..3),
+                     max_theo_mz = max(..4),
+                     ppm_error = calculate_mma_ppm(max(..3), max(..4)),
+                     ion = ..5,
+                     charge = ..6,
+                     scoreMFA = ..7,
+                     cosineSim = ..8,
+                     SN_estimate = ..9
+                  )
+               )
+            )
+         ) %>%
+         purrr::map(
+            purrr::compact
+         ) %>%
+         purrr::map(
+            dplyr::bind_rows
+         ) %>%
+         dplyr::bind_rows()
+
+
+      if (save_output == TRUE) {
+
+         message("Making tablegrob list for PDF output")
+
+         spectra_MS2_marrange <-
+            unlist(spectra_MS2, recursive = F) %>%
+            purrr::flatten() %>%
+            gridExtra::marrangeGrob(
+               grobs = .,
+               ncol = 5,
+               nrow = 3,
+               top = paste0(rawFileName)
+            )
+
+         message("Saving arranged MS2 spectra")
+
+         ggplot2::ggsave(
+            filename =
+               fs::path(
+                  saveDir,
+                  paste0(
+                     fs::path_ext_remove(rawFileName),
+                     "_specZoom_MS2.pdf"
+                  )
+               ),
+            plot = spectra_MS2_marrange,
+            width = 20,
+            height = 12,
+            limitsize = FALSE
+         )
+
+         # Save data frame of fragments which beat ScoreMFA cutoff
+
+         message("Writing 'assigned' fragment ions to spreadsheet")
+
+         writexl::write_xlsx(
+            spectra_MS2_dataframe,
+            path =
+               fs::path(
+                  saveDir,
+                  paste0(
+                     fs::path_ext_remove(
+                        stringr::str_trunc(
+                           rawFileName, 90, "right", ellipsis = ""
+                        )
+                     ),
+                     '_assigned_fragments_MS2.xlsx'
+                  )
+               )
+         )
+
+
+         # Write params to text file
+
+         readr::write_lines(
+            glue::glue(
+               "
+               ----------------
+               {systime2}
+               ----------------
+               rawFileDir = {toString(rawFileDir)}
+               rawFileName = {toString(rawFileName)}
+               targetSeqData = {toString(targetSeqData)}
+               outputDir = {toString(outputDir)}
+               target_col_name = {toString(target_col_name)}
+               target_sequence_col_name = {toString(target_sequence_col_name)}
+               PTMname_col_name = {toString(PTMname_col_name)}
+               PTMformula_col_name1 = {toString(PTMformula_col_name1)}
+               PTMformula_col_name2 = {toString(PTMformula_col_name2)}
+               isoNames = {toString(names(isoAbund))}
+               isoAbund = {toString(isoAbund)}
+               fragment_charges = {toString(fragment_charges)}
+               fragment_types = {toString(fragment_types)}
+               fragment_mz_range = {toString(fragment_mz_range)}
+               fragment_pos_cutoff = {toString(fragment_pos_cutoff)}
+               XIC_tol_MS2 = {XIC_tol_MS2}
+               XIC_cutoff = {XIC_cutoff}
+               scoreMFAcutoff = {scoreMFAcutoff}
+               cosinesimcutoff = {cosinesimcutoff}
+               resPowerMS2 = {resPowerMS2}
+               isotopologue_window_multiplier = {isotopologue_window_multiplier}
+               mz_window = {mz_window}
+               use_IAA = {use_IAA}
+               save_output = {save_output}
+               abund_cutoff = {abund_cutoff}
+               "
+            ),
+            file =
+               fs::path(
+                  saveDir,
+                  'GEX_params.txt'
+               )
+         )
+
+      }
 
 
    }
