@@ -727,7 +727,7 @@ make_every_XIC_MS2 <-
                ~dplyr::bind_cols(
                   .x,
                   dplyr::group_by(.y, charge) %>%
-                  dplyr::filter(abundance == max(abundance))
+                     dplyr::filter(abundance == max(abundance))
                )
             )
          ) %>%
@@ -755,11 +755,29 @@ make_every_XIC_MS2 <-
                dplyr::first()
          )
 
+      scan_to_read_flat <-
+         purrr::map_depth(
+            fragments_maxTIC,
+            3,
+            ~dplyr::pull(.x, scan) %>%
+               dplyr::first()
+         )%>%
+         unlist() %>%
+         unique()
+
       browser()
 
       # Read the scan with max TIC for each fragment and subset it to the
       # desired range
 
+      scans <-
+         rawrr::readSpectrum(
+            rawfile = rawFile,
+            scan = scan_to_read_flat
+         ) %>%
+         purrr::set_names(
+            scan_to_read_flat
+         )
 
       scans_to_plot <-
          purrr::pmap(
@@ -777,11 +795,7 @@ make_every_XIC_MS2 <-
                      ..1,
                      ..2
                   ),
-                  ~rawrr::readSpectrum(
-                     rawfile = rawFile,
-                     scan = ..1
-                  ) %>%
-                     purrr::flatten() %>%
+                  ~scans[[as.character(..1)]] %>%
                      {
                         tibble::tibble(
                            mz = .$mZ,
@@ -814,11 +828,7 @@ make_every_XIC_MS2 <-
                      ..1,
                      ..2
                   ),
-                  ~rawrr::readSpectrum(
-                     rawfile = rawFile,
-                     scan = ..1
-                  ) %>%
-                     purrr::flatten() %>%
+                  ~scans[[as.character(..1)]] %>%
                      {
                         MALDIquant::createMassSpectrum(
                            mass = .[["mZ"]],
