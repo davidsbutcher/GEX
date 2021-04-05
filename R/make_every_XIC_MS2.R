@@ -319,17 +319,45 @@ make_every_XIC_MS2 <-
             chemformulas_withH,
             ~dplyr::mutate(
                .x,
-               chemform = .y
+               chemform = .y,
+               ion_chemform = paste(ion, chemform, sep = "_")
             )
          )
 
       # Prepare fragments data for combination with iso_dist_MS2 later
+
+      fragments3_old <-
+         fragments2 %>%
+         purrr::map(
+            ~dplyr::group_by(.x, type, pos, mz) %>%
+               dplyr::group_split()
+         )
 
       fragments3 <-
          fragments2 %>%
          purrr::map(
             ~dplyr::group_by(.x, type, pos, mz) %>%
                dplyr::group_split()
+         )
+
+      chemform_names <-
+         purrr::map_depth(
+            fragments3,
+            2,
+            ~paste(dplyr::pull(.x, ion), dplyr::pull(.x, chemform), sep = "_")
+         )
+
+      # Need to reorder fragments3 to match the order of fragments2/iso_dist_MS2
+
+      fragments3 <-
+         purrr::map2(
+            fragments3,
+            chemform_names,
+            ~purrr::set_names(.x, .y)
+         ) %>%
+         purrr::map2(
+            fragments2,
+            ~.x[.y$ion_chemform]
          )
 
       # Generate isotopic distributions ---------
@@ -578,6 +606,7 @@ make_every_XIC_MS2 <-
             )
          )
 
+      message(paste("Memory used:", pryr::mem_used()/1000000, "MB"))
 
       if (save_output == TRUE) {
 
@@ -685,6 +714,11 @@ make_every_XIC_MS2 <-
             height = 12,
          )
 
+         # XIC_plots_MS2_marrange is large and no longer needed
+
+         rm(XIC_plots_MS2_marrange)
+
+
       }
 
 
@@ -753,31 +787,15 @@ make_every_XIC_MS2 <-
             3,
             ~dplyr::pull(.x, scan) %>%
                dplyr::first()
-         )
-
-      scan_to_read_flat <-
+         ) %>%
          purrr::map_depth(
-            fragments_maxTIC,
-            3,
-            ~dplyr::pull(.x, scan) %>%
-               dplyr::first()
-         )%>%
-         unlist() %>%
-         unique()
-
-      browser()
+            2,
+            ~magrittr::extract2(.x, 1)
+         )
 
       # Read the scan with max TIC for each fragment and subset it to the
       # desired range
 
-      scans <-
-         rawrr::readSpectrum(
-            rawfile = rawFile,
-            scan = scan_to_read_flat
-         ) %>%
-         purrr::set_names(
-            scan_to_read_flat
-         )
 
       scans_to_plot <-
          purrr::pmap(
@@ -790,23 +808,26 @@ make_every_XIC_MS2 <-
                   ..1,
                   ..2
                ),
-               ~purrr::pmap(
-                  list(
-                     ..1,
-                     ..2
-                  ),
-                  ~scans[[as.character(..1)]] %>%
-                     {
-                        tibble::tibble(
-                           mz = .$mZ,
-                           intensity = .$intensity
-                        ) %>%
-                           dplyr::filter(
-                              mz >= ..2 - mz_window/2,
-                              mz <= ..2 + mz_window/2
-                           )
-                     }
-               )
+               ~rawrr::readSpectrum(
+                  rawfile = rawFile,
+                  scan = ..1
+               ) %>%
+                  purrr::flatten() %>%
+                  {
+                     tibble::tibble(
+                        mz = .$mZ,
+                        intensity = .$intensity
+                     )
+                  } %>%
+                  list() %>%
+                  purrr::map2(
+                     .y = ..2,
+                     ~dplyr::filter(
+                        .x,
+                        mz >= .y - mz_window/2,
+                        mz <= .y + mz_window/2
+                     )
+                  )
             )
          )
 
@@ -815,20 +836,21 @@ make_every_XIC_MS2 <-
       noise_obs_MS2 <-
          purrr::pmap(
             list(
-               scan_to_read,
-               mz_to_read
+               scan_to_read
             ),
             ~purrr::pmap(
                list(
-                  ..1,
-                  ..2
+                  ..1
                ),
                ~purrr::pmap(
                   list(
-                     ..1,
-                     ..2
+                     ..1
                   ),
-                  ~scans[[as.character(..1)]] %>%
+                  ~rawrr::readSpectrum(
+                     rawfile = rawFile,
+                     scan = ..1
+                  ) %>%
+                     purrr::flatten() %>%
                      {
                         MALDIquant::createMassSpectrum(
                            mass = .[["mZ"]],
@@ -1234,6 +1256,7 @@ make_every_XIC_MS2 <-
                dplyr::first()
          )
 
+
       spectra_MS2 <-
          purrr::pmap(
             list(
@@ -1336,7 +1359,7 @@ make_every_XIC_MS2 <-
                ),
                ~purrr::pmap(
                   list(
-                     ..1[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff], # By subsetting this way, spectra
+                     rep(..1, length(..2))[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff], # By subsetting this way, spectra
                      ..2[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff], # with low scoreMFAs are removed
                      ..3[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
                      ..4[..7 > scoreMFAcutoff & ..8 > cosinesimcutoff],
@@ -1357,7 +1380,7 @@ make_every_XIC_MS2 <-
                      charge = ..6,
                      scoreMFA = ..7,
                      cosineSim = ..8,
-                     SN_estimate = ..9
+                     mean_SN_estimate = mean(..9)
                   )
                )
             )
@@ -1370,6 +1393,7 @@ make_every_XIC_MS2 <-
          ) %>%
          dplyr::bind_rows()
 
+      message(paste("Memory used:", pryr::mem_used()/1000000, "MB"))
 
       if (save_output == TRUE) {
 

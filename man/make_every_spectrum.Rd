@@ -7,23 +7,22 @@
 make_every_spectrum(
   make_every_XIC_output,
   mz_window = 3,
-  mz_window_scaling = 0.00333,
   SN_cutoff = 10,
   mean_cosine_sim_cutoff = 0.8,
+  mean_score_mfa_cutoff = 0.3,
+  resPowerMS1 = 3e+05,
+  isotopologue_window_multiplier = 6,
   MSoutputWidth = 18,
   MSoutputDPI = 200,
   makePNG = FALSE,
-  future_workers = 1L,
-  return_timers = TRUE
+  return_timers = TRUE,
+  save_spec_object = FALSE
 )
 }
 \arguments{
 \item{make_every_XIC_output}{Direct output from make_every_XIC.}
 
 \item{mz_window}{Width of the m/z window to be used to make mini spectra.}
-
-\item{mz_window_scaling}{Scaling factor for window for determination of intensity
-for individual isotopologue peaks. Multiplied by mz_window value.}
 
 \item{MSoutputWidth}{Width of png output. Only used is makePNG is TRUE.}
 

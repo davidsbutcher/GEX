@@ -20,11 +20,14 @@ make_every_spectrum <-
       mz_window = 3,
       SN_cutoff = 10,
       mean_cosine_sim_cutoff = 0.8,
+      mean_score_mfa_cutoff = 0.3,
       resPowerMS1 = 300000,
+      isotopologue_window_multiplier = 6,
       MSoutputWidth = 18,
       MSoutputDPI = 200,
       makePNG = FALSE,
-      return_timers = TRUE
+      return_timers = TRUE,
+      save_spec_object = FALSE
    ) {
 
       library(rawDiag)
@@ -106,13 +109,6 @@ make_every_spectrum <-
             )
          )
 
-      # purrr::map(
-      #    scanNumsToRead,
-      #    ~rawR::readSpectrum(
-      #       rawFile,
-      #       scan = .x
-      #    )
-      # )
 
       spectra_highestTIC <-
          purrr::imap(
@@ -149,18 +145,6 @@ make_every_spectrum <-
             ~dplyr::mutate(.x, noise = .y)
          )
 
-      # Delete noise estimates to save memory
-
-      # mz_max_abund <-
-      #    iso_dist_list_union %>%
-      #    purrr::map(
-      #          ~dplyr::filter(.x, abundance == 100)
-      #    ) %>%
-      #    purrr::map(
-      #       ~dplyr::pull(.x, `m/z`)
-      #    ) %>%
-      #    purrr::map(as.list) %>%
-      #    .[sumXIC_summary %>% dplyr::pull(seq_name)]
 
       # m/z value of highest abundance theoretical isotopologue peaks.
       # These are the standard for comparison of list lengths!
@@ -183,16 +167,7 @@ make_every_spectrum <-
       standard_lengths <-
          purrr::map(mz_max_abund, length)
 
-      # mz_max_abund_charge <-
-      #    iso_dist_list_union %>%
-      #    purrr::map(
-      #       ~dplyr::filter(.x, abundance == 100)
-      #    ) %>%
-      #    purrr::map(
-      #       ~dplyr::pull(.x, charge)
-      #    ) %>%
-      #    purrr::map(as.list) %>%
-      #    .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
 
       message("Getting charges of highest intensity isotopologues")
 
@@ -212,6 +187,7 @@ make_every_spectrum <-
             standard_lengths,
             ~fix_list_length(.x, .y)
          )
+
 
       # Get m/zs for all theoretical isotopologues by charge state
       # for use in getting observed intensities for each isotopologue
@@ -267,6 +243,36 @@ make_every_spectrum <-
          ) %>%
          purrr::map(as.list) %>%
          .[sumXIC_summary %>% dplyr::pull(seq_name)]
+
+      # Use new method to get noise estimate based on a window centered on
+      # the m/z of max abundance with width 10*mz_window
+
+      # THIS IS DEPRECATED FOR NOW. With reduced profile mode data, the dearth
+      # of points in the vicinity of some peaks makes local noise estimation
+      # problematic
+
+      # spectra_noiseEstimates_window <-
+      #    purrr::map2(
+      #       spectra_highestTIC,
+      #       mz_max_abund,
+      #       ~purrr::map2(
+      #          list(.x),
+      #          .y,
+      #          ~dplyr::filter(
+      #             .x,
+      #             mz > .y - (mz_window*100)/2,
+      #             mz < .y + (mz_window*100)/2
+      #          ) %>%
+      #             {MALDIquant::createMassSpectrum(
+      #                mass = .$mz,
+      #                intensity = .$intensity
+      #             )} %>%
+      #             MALDIquant::estimateNoise(method = "MAD") %>%
+      #             {if (length(.) == 1) c(0) else .[,2]} %>%
+      #             .[[1]] %>%
+      #             {if (. == 0) 1E9 else .}
+      #       )
+      #    )
 
       # Get values to use for vertical lines on plots
 
@@ -402,7 +408,8 @@ make_every_spectrum <-
                   x = mz,
                   y = intensity,
                   mz = .y,
-                  res_power = resPowerMS1
+                  res_power = resPowerMS1,
+                  isotopologueWinMultiplier = isotopologue_window_multiplier
                )
             )
          ) %>%
@@ -428,7 +435,8 @@ make_every_spectrum <-
                   x = mz,
                   y = intensity,
                   mz = .y,
-                  res_power = resPowerMS1
+                  res_power = resPowerMS1,
+                  isotopologueWinMultiplier = isotopologue_window_multiplier
                )
             )
          ) %>%
@@ -444,20 +452,133 @@ make_every_spectrum <-
 
       message("Scaling theoretical isotopic abundances")
 
-      iso_abund_theoretical_scaled <-
+
+      intensity_theo_scaling_factors <-
          purrr::map2(
-            iso_abund_per_charge_state,
             results_isotopologueTICs,
+            iso_abund_per_charge_state,
             ~purrr::map2(
-               .x,
-               .y,
-               ~scales::rescale(.x, c(min(.y), max(.y)))
+               .x = .x,
+               .y = .y,
+               ~max(.x)/max(.y)
+            )
+         )
+
+
+      iso_abund_theoretical_scaled <-
+         purrr::pmap(
+            list(
+               iso_abund_per_charge_state,
+               intensity_theo_scaling_factors,
+               results_isotopologueTICs
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3
+               ),
+               ~as.numeric(.x)*as.numeric(.y) %>%
+                  {if (length(.) == 0) rep(0, length(..3)) else .}
             )
          ) %>%
          purrr::map2(
             standard_lengths,
             ~fix_list_length(.x, .y)
          )
+
+      ## Try to determine peak resolving power using linear interpolation
+
+      rp_obs_MS1 <-
+         purrr::pmap(
+            list(
+               spectra_highestTIC,
+               mz_all_abund
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1 = list(..1),
+                  ..2 = ..2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1 = list(..1),
+                     ..2 = ..2
+                  ),
+                  ~get_rp_in_Xrange_vector(
+                     df = ..1,
+                     x = mz,
+                     y = intensity,
+                     mz = ..2,
+                     res_power = resPowerMS1,
+                     isotopologueWinMultiplier = isotopologue_window_multiplier
+                  )
+               ) %>%
+                  unlist()
+            )
+         )
+
+      # Convert all resolving powers into a data frame for linear modeling
+
+      rp_obs_MS1_df <-
+         purrr::map2(
+            rp_obs_MS1,
+            mz_all_abund,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~tibble::tibble(
+                  rp = .x,
+                  mz = .y
+               ) %>%
+                  tidyr::unnest() %>%
+                  dplyr::filter(rp != 0)
+            )
+         ) %>%
+         dplyr::bind_rows() %>%
+         dplyr::arrange(mz)
+
+      # Calculate linear model for RP based on determined non-zero values
+
+      x <- rp_obs_MS1_df$mz
+      y <- rp_obs_MS1_df$rp
+
+      resolving_power_model <-
+         fit <- lm(y ~ I(1/x))
+
+      # Calculate theoretical resolving powers for every isotopologue peak
+
+      rp_theo_MS1 <-
+         purrr::map_depth(
+            mz_all_abund,
+            2,
+            ~predict(
+               resolving_power_model,
+               newdata =
+                  data.frame(
+                     x = .x
+                  )
+            )
+         )
+
+      # Replace all zeros in rp_obs_MS1 with theoretical values from the fit
+
+      rp_obs_theo_hybrid_MS1 <-
+         purrr::map2(
+            rp_obs_MS1,
+            rp_theo_MS1,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~purrr::map2_dbl(
+                  .x,
+                  .y,
+                  ~{if (.x == 0) .y else .x}
+               )
+            )
+         )
+
+
 
       ## Calculate cosine similarities
 
@@ -474,7 +595,7 @@ make_every_spectrum <-
                   .x,
                   .y
                ) %>%
-                  {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
+                  {if (length(.) == 0 | is.nan(.) | is.null(.)) 0 else .}
             )
          ) %>%
          purrr::map2(
@@ -484,6 +605,29 @@ make_every_spectrum <-
 
       ## Calculate S/N estimates
 
+      # SN_estimate_obs_OLD <-
+      #    purrr::map2(
+      #       results_isotopologueTICs,
+      #       mz_max_abund_noise,
+      #       ~purrr::map2(
+      #          .x,
+      #          .y,
+      #          ~(.x/.y) %>%
+      #             {if (length(.) == 0 | is.nan(.) | is.null(.)) 0 else .}
+      #       )
+      #    ) %>%
+      #    purrr::map(
+      #       ~purrr::map_if(
+      #          .x,
+      #          ~length(.x) == 0,
+      #          ~0
+      #       )
+      #    ) %>%
+      #    purrr::map2(
+      #       standard_lengths,
+      #       ~fix_list_length(.x, .y)
+      #    )
+
       SN_estimate_obs <-
          purrr::map2(
             results_isotopologueTICs,
@@ -491,7 +635,8 @@ make_every_spectrum <-
             ~purrr::map2(
                .x,
                .y,
-               ~(.x/.y)
+               ~(.x/.y) %>%
+                  {if (length(.) == 0 | is.nan(.) | is.null(.)) 0 else .}
             )
          ) %>%
          purrr::map(
@@ -506,27 +651,44 @@ make_every_spectrum <-
             ~fix_list_length(.x, .y)
          )
 
+
       SN_estimate_theo <-
-         purrr::map2(
-            iso_abund_theoretical_scaled,
-            mz_max_abund_noise,
-            ~purrr::map2(
-               .x,
-               .y,
-               ~(.x/.y)
+         purrr::pmap(
+            list(
+               iso_abund_theoretical_scaled,
+               mz_max_abund_noise,
+               SN_estimate_obs
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2,
+                  ..3
+               ),
+               ~(..1/..2) %>%
+                  {if (length(.) == 0) rep(0, length(..3)) else .}
+               # {if (is.nan(.) | is.null(.) | is.infinite(.)) rep(0, length(.x)) else .}
             )
          ) %>%
-         purrr::map(
-            ~purrr::map_if(
-               .x,
-               ~length(.x) == 0,
-               ~0
-            )
-         ) %>%
-         purrr::map2(
-            standard_lengths,
-            ~fix_list_length(.x, .y)
-         )
+         # purrr::map2(
+         #    SN_estimate_obs,
+         #    ~purrr::map_if(
+         #       .x,
+         #       ~length(.x) == 0,
+         #       ~rep(0, length(.y))
+         #    )
+         # ) %>%
+         # purrr::map(
+         #    ~purrr::map_if(
+         #       .x,
+      #       ~any(is.nan(.x) | is.null(.) | is.infinite(.)),
+      #       ~rep(0, length(.x))
+      #    )
+      # ) %>%
+      purrr::map2(
+         standard_lengths,
+         ~fix_list_length(.x, .y)
+      )
 
 
       ## Calculate Mel's ScoreMFA
@@ -536,7 +698,7 @@ make_every_spectrum <-
             list(
                results_isotopologueMZ,
                mz_all_abund,
-               resPowerMS1,
+               rp_obs_theo_hybrid_MS1,
                SN_estimate_obs,
                SN_estimate_theo
             ),
@@ -551,9 +713,10 @@ make_every_spectrum <-
                ~ScoreMFA(
                   ..1,
                   ..2,
-                  rep(..3, length(..1)),
+                  ..3,
                   ..4,
-                  ..5
+                  ..5,
+                  rp_mult = 2
                ) %>%
                   {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
             )
@@ -565,13 +728,13 @@ make_every_spectrum <-
 
       ## Save score_MFA data for further analysis, TESTING PURPOSES ONLY
 
-      saveRDS(score_MFA, paste0(saveDir, "/score_MFA.rds"))
-
-      saveRDS(results_isotopologueMZ, paste0(saveDir, "/results_isotopologueMZ.rds"))
-      saveRDS(mz_all_abund, paste0(saveDir, "/mz_all_abund.rds"))
-
-      saveRDS(SN_estimate_obs, paste0(saveDir, "/SN_estimate_obs.rds"))
-      saveRDS(SN_estimate_theo, paste0(saveDir, "/SN_estimate_theo.rds"))
+      # saveRDS(score_MFA, paste0(saveDir, "/score_MFA.rds"))
+      #
+      # saveRDS(results_isotopologueMZ, paste0(saveDir, "/results_isotopologueMZ.rds"))
+      # saveRDS(mz_all_abund, paste0(saveDir, "/mz_all_abund.rds"))
+      #
+      # saveRDS(SN_estimate_obs, paste0(saveDir, "/SN_estimate_obs.rds"))
+      # saveRDS(SN_estimate_theo, paste0(saveDir, "/SN_estimate_theo.rds"))
 
       ## Make table with all charge state TICs
 
@@ -586,7 +749,8 @@ make_every_spectrum <-
                PTM_names_list,
                results_chargestateTICs,
                mz_max_abund_noise,
-               cosine_sims
+               cosine_sims,
+               score_MFA
             ),
             ~purrr::pmap(
                list(
@@ -596,7 +760,8 @@ make_every_spectrum <-
                   ..4,
                   ..5,
                   ..6,
-                  ..7
+                  ..7,
+                  ..8
                ),
                ~tibble::tibble(
                   name = ..1,
@@ -606,7 +771,8 @@ make_every_spectrum <-
                   maxTIC = ..5,
                   noise_estimate = ..6,
                   `estimated_S/N` = round(maxTIC/noise_estimate, digits = 0),
-                  cosine_sim = ..7
+                  cosine_sim = ..7,
+                  score_MFA = ..8
                )
             )
          ) %>%
@@ -618,8 +784,9 @@ make_every_spectrum <-
          results_chargestateTICs2 %>%
          dplyr::group_by(name) %>%
          dplyr::filter(
-            `estimated_S/N` != 0,
-            cosine_sim != 0
+            `estimated_S/N` > SN_cutoff,
+            cosine_sim != 0,
+            score_MFA != 0
          ) %>%
          dplyr::summarize(
             charge_states = paste(unique(mz_max_abund_charge), collapse = ", "),
@@ -628,15 +795,17 @@ make_every_spectrum <-
             `highest_S/N` = max(`estimated_S/N`),
             `lowest_S/N` = min(`estimated_S/N`),
             `mean_S/N` = mean(`estimated_S/N`),
-            mean_cosine_sim = mean(cosine_sim)
+            mean_cosine_sim = mean(cosine_sim),
+            mean_score_mfa = mean(score_MFA)
          ) %>%
          dplyr::arrange(mean_cosine_sim)
 
       results_chargestateTICs_summary_filtered <-
          results_chargestateTICs_summary %>%
          dplyr::filter(
-            `highest_S/N` > SN_cutoff,
-            mean_cosine_sim > mean_cosine_sim_cutoff
+            # `highest_S/N` > SN_cutoff,
+            mean_cosine_sim > mean_cosine_sim_cutoff,
+            mean_score_mfa > mean_score_mfa_cutoff
          )
 
       ## Make all MS based on mz of max abundance for each charge state
@@ -656,8 +825,6 @@ make_every_spectrum <-
                cosine_sims,
                mz_all_abund,
                iso_abund_theoretical_scaled,
-               # mz_window_scaling*mz_window,
-               mz_all_abund,
                score_MFA
             ),
             ~purrr::pmap(
@@ -672,8 +839,7 @@ make_every_spectrum <-
                   ..8,
                   ..9,
                   ..10,
-                  ..11,
-                  ..12
+                  ..11
                ),
                ~make_spectrum_top1(
                   df = ..1,
@@ -690,9 +856,9 @@ make_every_spectrum <-
                   cosine_sims = ..8,
                   mz_all_abund = ..9,
                   iso_abund_theoretical_scaled = ..10,
-                  isotopologue_window = 2*(..11/resPowerMS1),
+                  isotopologue_window = isotopologue_window_multiplier*(..9/resPowerMS1),
                   theme = MStheme01,
-                  score_mfa = ..12
+                  score_mfa = ..11
                )
             ) %>%
                purrr::set_names(..4)
@@ -702,7 +868,14 @@ make_every_spectrum <-
             ~ggplot_list_checker(.x)
          )
 
-      saveRDS(spectra_highestTIC_plots, paste0(saveDir, "/spectra_highestTIC_plots.rds"))
+      # SAVE PLOTS OBJECT, FOR DEV PURPOSES
+
+      if (save_spec_object == TRUE) {
+
+         saveRDS(spectra_highestTIC_plots, paste0(saveDir, "/spectra_highestTIC_plots.rds"))
+         saveRDS(target_seqs, paste0(saveDir, "/target_seqs.rds"))
+
+      }
 
       timer$stop("Make MS, Top 1 most intense, PART 2")
 
@@ -770,10 +943,6 @@ make_every_spectrum <-
             tablegrob_list_top1 %>%
             purrr::map(use_series, "heights") %>%
             purrr::map(length)
-
-      }
-
-      if (makePNG == TRUE) {
 
          if (dir.exists(paste0(saveDir, "/mass_spec/")) == FALSE) {
 

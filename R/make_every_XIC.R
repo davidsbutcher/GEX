@@ -18,7 +18,6 @@
 #' @param use_IAA
 #' @param save_output
 #' @param abund_cutoff
-#' @param hClust_height
 #'
 #' @return
 #' @export
@@ -52,8 +51,6 @@ make_every_XIC <-
       abund_cutoff = 15
    ) {
 
-      # library(purrr)
-      # library(magrittr)
       library(rawDiag)
 
       # Assertions --------------------------------------------------------------
@@ -208,34 +205,26 @@ make_every_XIC <-
 
       # Get positions of specific isotopes in dataframe
 
-      index_12C <-
-         which(isotopes_to_use$isotope == "12C") %>%
-         .[[1]]
-
-      index_13C <-
-         which(isotopes_to_use$isotope == "13C") %>%
-         .[[1]]
-
-      index_14N <-
-         which(isotopes_to_use$isotope == "14N") %>%
-         .[[1]]
-
-      index_15N <-
-         which(isotopes_to_use$isotope == "15N") %>%
-         .[[1]]
+      indices <-
+         list(
+            "12C" = which(isotopes$isotope == "12C") %>% .[[1]],
+            "13C" = which(isotopes$isotope == "13C") %>% .[[1]],
+            "14N" = which(isotopes$isotope == "14N") %>% .[[1]],
+            "15N" = which(isotopes$isotope == "15N") %>% .[[1]]
+         )
 
       # Replace values in dataframe with supplied values
 
-      isotopes_to_use$abundance[index_12C] <-
+      isotopes_to_use$abundance[indices[["12C"]]] <-
          isoAbund[which(names(isoAbund) == "12C")]
 
-      isotopes_to_use$abundance[index_13C] <-
+      isotopes_to_use$abundance[indices[["13C"]]] <-
          1 - isoAbund[which(names(isoAbund) == "12C")]
 
-      isotopes_to_use$abundance[index_14N] <-
+      isotopes_to_use$abundance[indices[["14N"]]] <-
          isoAbund[which(names(isoAbund) == "14N")]
 
-      isotopes_to_use$abundance[index_15N] <-
+      isotopes_to_use$abundance[indices[["15N"]]] <-
          1 - isoAbund[which(names(isoAbund) == "14N")]
 
       # Process target sequences ------------------------------------------------
@@ -495,7 +484,9 @@ make_every_XIC <-
             )
          )
 
-      # rm(iso_dist)
+      # Remove iso_dist to save space hopefully
+
+      rm(iso_dist)
 
       # Keep the next three chunks separate, doesn't work if they are condensed
 
@@ -722,49 +713,20 @@ make_every_XIC <-
 
          systime <- format(Sys.time(), "%Y%m%d")
 
-         if (all(isoAbund == c("12C" = 0.9893, "14N" = 0.99636))) {
+         saveDir <-
+            fs::path(
+               outputDir,
+               paste0(
+                  systime,
+                  "_",
+                  fs::path_ext_remove(rawFileName),
+                  "_",
+                  length(target_seqs),
+                  "seqs"
+               )
+            ) %>%
+            stringr::str_trunc(246, "right", ellipsis = "")
 
-            saveDir <-
-               fs::path(
-                  outputDir,
-                  paste0(
-                     fs::path_ext_remove(rawFileName),
-                     "_",
-                     length(target_seqs),
-                     "seqs_IsoNorm"
-                  )
-               ) %>%
-               stringr::str_trunc(246, "right", ellipsis = "")
-
-         } else if (isoAbund[[1]] < 0.9893 | isoAbund[[2]] < 0.99636) {
-
-            saveDir <-
-               fs::path(
-                  outputDir,
-                  paste0(
-                     fs::path_ext_remove(rawFileName),
-                     "_",
-                     length(target_seqs),
-                     "seqs_IsoDep"
-                  )
-               ) %>%
-               stringr::str_trunc(246, "right", ellipsis = "")
-
-         } else {
-
-            saveDir <-
-               fs::path(
-                  outputDir,
-                  paste0(
-                     fs::path_ext_remove(rawFileName),
-                     "_",
-                     length(target_seqs),
-                     "seqs"
-                  )
-               ) %>%
-               stringr::str_trunc(246, "right", ellipsis = "")
-
-         }
 
          if (dir.exists(saveDir) == FALSE) dir.create(saveDir)
 
@@ -790,7 +752,7 @@ make_every_XIC <-
 
          readr::write_csv(
             target_seqs_df,
-            path =
+            file =
                fs::path(
                   saveDir,
                   paste0(

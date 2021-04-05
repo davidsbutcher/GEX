@@ -14,7 +14,8 @@ make_every_XIC(
   PTMname_col_name = c("PTMname"),
   PTMformula_col_name1 = c("FormulaToAdd"),
   PTMformula_col_name2 = c("FormulaToSubtract"),
-  use_depleted_isotopes = FALSE,
+  isoAbund = c(`12C` = 0.9893, `14N` = 0.99636),
+  resPowerMS1 = 3e+05,
   sample_n_pforms = NULL,
   mass_range = c(0, 1e+05),
   target_charges = c(1:50),
@@ -22,8 +23,7 @@ make_every_XIC(
   XIC_tol = 2,
   use_IAA = FALSE,
   save_output = TRUE,
-  abund_cutoff = 5,
-  future_workers = 8
+  abund_cutoff = 15
 )
 }
 \arguments{

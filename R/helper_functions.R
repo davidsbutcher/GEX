@@ -76,9 +76,9 @@ make_XIC_plot_MS2 =
                x = {{x}},
                y = {{y}},
                label = glue::glue(
-                  "{ion_name}\nCharge {ion_charge}+\nMaxTIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}"
+                  "{ion_name}\nCharge {stringr::str_wrap(toString(paste0(ion_charge,'+')), width = 40)}\nMaxTIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}"
                ),
-               alpha = 0.5,
+               alpha = 0.35,
                size = 2
             ),
             vjust="inward",
@@ -93,7 +93,8 @@ make_XIC_plot_MS2 =
          ggplot2::guides(
             alpha = "none",
             size = "none"
-         )
+         ) +
+         ggplot2::scale_size_identity()
 
    }
 
@@ -219,7 +220,7 @@ make_spectrum_top1 =
             ymin = 0,
             ymax = ymax,
             fill = "blue",
-            alpha = 0.25,
+            alpha = 0.10,
             linetype = "blank"
          ) +
          ggplot2::annotate(
@@ -292,37 +293,66 @@ make_spectrum_top1 =
 make_spectrum_MS2 =
    function(
       df,
-      mz,
-      intensity,
       name = "",
       max_mz = NULL,
+      xrange = c(0,0),
       scan = NULL,
       ion = NULL,
       charge = NULL,
-      mz_all_abund = NULL,
       isotopologue_window = NULL,
+      ScoreMFA = NULL,
+      cosine_sim = NULL,
+      mz_theo = NULL,
+      int_theo = NULL,
+      sn_estimate = NULL,
       theme  = NULL
    ) {
 
+      if (is.null(max_mz)) {
+
+         empty_plot <- ggplot2::ggplot() + ggplot2::theme_void()
+
+         return(empty_plot)
+
+      }
+
       {
-         xmax <-
-            df %>%
-            dplyr::filter({{mz}} == max({{mz}})) %>%
-            dplyr::pull({{mz}})
+         # xmax <-
+         #    df %>%
+         #    dplyr::filter(mz == max(mz)) %>%
+         #    dplyr::pull(mz)
 
-         ymax <-
-            df %>%
-            dplyr::filter({{intensity}} == max({{intensity}})) %>%
-            dplyr::pull({{intensity}}) %>%
-            magrittr::extract(1)
+         if (is.null(xrange) == FALSE & length(xrange) > 1) {
 
+            xmax <- xrange[[2]]
 
-         if (length(xmax) == 0) {
+         } else if (length(xrange) < 2) {
+
+            xmax <- max_mz
+
+         } else {
 
             xmax <- max_mz
 
          }
 
+         # ymax <-
+         #    df %>%
+         #    dplyr::filter(intensity == max(intensity)) %>%
+         #    dplyr::pull(intensity) %>%
+         #    magrittr::extract(1)
+
+         # Use new method to calculate Ymax
+
+         ymax <-
+            max(int_theo)+(0.1*max(int_theo))
+
+
+         # if (length(xmax) == 0) {
+         #
+         #    xmax <- max_mz[[1]]
+         #
+         # }
 
          if (length(ymax) > 1) {
 
@@ -338,9 +368,21 @@ make_spectrum_MS2 =
 
          }
 
+         if (is.null(ScoreMFA)) {
+
+            ScoreMFA <- 0
+
+         }
+
+         if (is.null(cosine_sim)) {
+
+            cosine_sim <- 0
+
+         }
+
       }
 
-      ggplot2::ggplot(df, ggplot2::aes({{mz}}, {{intensity}})) +
+      ggplot2::ggplot(df, ggplot2::aes(mz, intensity)) +
          ggplot2::geom_line(
             ggplot2::aes(size = 0.25)
          ) +
@@ -348,24 +390,33 @@ make_spectrum_MS2 =
             "text",
             x = xmax,
             y = ymax,
-            label = glue::glue("{name}\n{ion}\nCharge +{charge}\nScan #{scan}"),
+            label = glue::glue("{name}\n{ion}\nCharge {charge}+\nScan #{scan}\nScoreMFA: {signif(ScoreMFA, digits = 3)}\nCosine Sim: {signif(cosine_sim, digits = 3)}\nS/N estimate: {signif(max(sn_estimate), digits = 2)}"),
             vjust="inward",
             hjust="inward",
             size = 2,
             alpha = 0.5
          ) +
          ggplot2::annotate(
+            "point",
+            x = mz_theo,
+            y = int_theo,
+            color = "red",
+            shape = 1,
+            size = 2.5,
+            alpha = 0.5
+         ) +
+         ggplot2::annotate(
             "rect",
-            xmin = mz_all_abund-(isotopologue_window/2),
-            xmax = mz_all_abund+(isotopologue_window/2),
+            xmin = mz_theo - (isotopologue_window/2),
+            xmax = mz_theo + (isotopologue_window/2),
             ymin = 0,
-            ymax = ymax,
+            ymax = int_theo,
             fill = "red",
             alpha = 0.25,
             linetype = "blank"
          ) +
          ggplot2::lims(
-            # x = c(xmin, xmax),
+            x = xrange,
             y = c(0, ymax)
          ) +
          ggplot2::guides(
@@ -396,7 +447,7 @@ get_maxY_in_Xrange <-
 
 get_maxY_in_Xrange_vector <-
    function(
-      df, x, y, mz = 0, res_power
+      df, x, y, mz = 0, res_power, isotopologueWinMultiplier = 2
    ) {
 
       out <- vector(mode = "numeric", length = length(mz))
@@ -405,8 +456,8 @@ get_maxY_in_Xrange_vector <-
 
          xrange <-
             c(
-               mz[[i]] - (mz[[i]]/res_power),
-               mz[[i]] + (mz[[i]]/res_power)
+               mz[[i]] - ((mz[[i]]/res_power)*isotopologueWinMultiplier)/2,
+               mz[[i]] + ((mz[[i]]/res_power)*isotopologueWinMultiplier)/2
             )
 
          out[[i]] <-
@@ -425,7 +476,7 @@ get_maxY_in_Xrange_vector <-
 
 get_maxX_in_Xrange_vector <-
    function(
-      df, x, y, mz = 0, res_power
+      df, x, y, mz = 0, res_power, isotopologueWinMultiplier = 2
    ) {
 
       out <- vector(mode = "numeric", length = length(mz))
@@ -434,8 +485,8 @@ get_maxX_in_Xrange_vector <-
 
          xrange <-
             c(
-               mz[[i]] - (mz[[i]]/res_power),
-               mz[[i]] + (mz[[i]]/res_power)
+               mz[[i]] - ((mz[[i]]/res_power)*isotopologueWinMultiplier)/2,
+               mz[[i]] + ((mz[[i]]/res_power)*isotopologueWinMultiplier)/2
             )
 
          out[[i]] <-
@@ -452,6 +503,111 @@ get_maxX_in_Xrange_vector <-
 
    }
 
+get_rp_in_Xrange_vector <-
+   function(
+      df, x, y, mz = 0, res_power, isotopologueWinMultiplier = 2
+   ) {
+
+      out <- vector(mode = "numeric", length = length(mz))
+
+      for (i in seq_along(mz)) {
+
+         xrange <-
+            c(
+               mz[[i]] - ((mz[[i]]/res_power)*isotopologueWinMultiplier)/2,
+               mz[[i]] + ((mz[[i]]/res_power)*isotopologueWinMultiplier)/2
+            )
+
+         df_trunc <-
+            df %>%
+            dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]])
+
+         # Get halfmax for the single isotopologue peak
+
+         halfmax <-
+            df_trunc %>%
+            dplyr::filter({{y}} == max({{y}})) %>%
+            dplyr::pull({{y}}) %>%
+            {if (length(.) == 0) 0 else .} %>%
+            {if (length(.) > 1) 0 else .} %>%
+            {./2}
+
+         maxX <-
+            df_trunc %>%
+            dplyr::filter({{y}} == max({{y}})) %>%
+            dplyr::pull({{x}})
+
+         # Split the spectrum into two halves, left and right of the max,
+         # both including max
+
+         df_trunc_left <-
+            df_trunc %>%
+            dplyr::filter({{x}} <= maxX)
+
+         df_trunc_right <-
+            df_trunc %>%
+            dplyr::filter({{x}} >= maxX)
+
+         # Find the values closest to half max, then perform linear interpolation
+         # to approximate the m/z value at the halfmax intensity
+
+         df_trunc_left2 <-
+            df_trunc_left %>%
+            dplyr::mutate(delta_max = abs(intensity - halfmax)) %>%
+            dplyr::arrange(delta_max) %>%
+            dplyr::slice_head(n = 2)
+
+
+         df_trunc_right2 <-
+            df_trunc_right %>%
+            dplyr::mutate(delta_max = abs(intensity - halfmax)) %>%
+            dplyr::arrange(delta_max) %>%
+            dplyr::slice_head(n = 2)
+
+         # Perform linear interpolation safely
+
+         possibly_approx <-
+            purrr::possibly(approx, otherwise = list(y = Inf))
+
+         deltaX_left <-
+            possibly_approx(
+               y = df_trunc_left2$mz,
+               x = df_trunc_left2$intensity,
+               xout = halfmax
+            ) %>%
+            .$y
+
+         deltaX_right <-
+            possibly_approx(
+               y = df_trunc_right2$mz,
+               x = df_trunc_right2$intensity,
+               xout = halfmax
+            ) %>%
+            .$y
+
+         deltaX <-  deltaX_right - deltaX_left
+
+         # Calculate estimated resolving power for the isotopologue peak
+
+         result <-
+            maxX/deltaX
+
+         if (length(result) == 0) {
+            out[[i]] <- 0
+         } else {
+            out[[i]] <- result[[1]]
+         }
+
+      }
+
+      out[is.na(out)] <- 0
+      out[is.nan(out)] <- 0
+      out[is.infinite(out)] <- 0
+
+      return(out)
+
+   }
+
 ggplot_list_checker <-
    function(
       ggplot_list
@@ -461,7 +617,11 @@ ggplot_list_checker <-
 
       for (i in rev(seq_along(ggplot_list))) {
 
-         if ((ggplot_list[[i]] %>% .$data %>% nrow()) == 0) {
+         if (length(ggplot_list[[i]]$data) == 0) {
+
+            ggplot_list[[i]] <- NULL
+
+         } else if (nrow(ggplot_list[[i]]$data) == 0) {
 
             ggplot_list[[i]] <- NULL
 
@@ -556,18 +716,24 @@ calculate_cosine_similarity <-
       return(costh)
    }
 
-ovln <- function(theo_mz, exp_mz, rp){
-   sd <- exp_mz / (6 * rp)
+ovln <- function(theo_mz, exp_mz, rp, rp_mult = 6){
+   sd <- exp_mz / (rp_mult * rp)
    Zn <- -abs(theo_mz - exp_mz) / (2 * sd)
    return(2*pnorm(Zn, mean=0, sd=1))
 }
 
-ovlhn <- function(theo_mz, exp_mz, theo_sn, exp_sn, rp){
+ovlhn <- function(theo_mz, exp_mz, theo_sn, exp_sn, rp, rp_mult = 6){
+
+   # Added by DSB to handle bug with missing values in exp_sn
+
+   if (is.na(theo_sn) | is.na(exp_sn)) return(0)
+   if (length(theo_sn) != length(exp_sn)) return(0)
+   if (is.null(theo_sn) | is.null(exp_sn)) return(0)
 
    if(theo_sn==exp_sn){
-      return(ovln(theo_mz,exp_mz,rp))
+      return(ovln(theo_mz,exp_mz, rp, rp_mult = rp_mult))
    } else {
-      sd <- exp_mz / (6 * rp)
+      sd <- exp_mz / (rp_mult * rp)
 
       mu1t <- theo_mz - trunc(exp_mz)
       mu2t <- exp_mz - trunc(exp_mz)
@@ -598,20 +764,32 @@ ovlhn <- function(theo_mz, exp_mz, theo_sn, exp_sn, rp){
 
 }
 
-ScoreMFA <- function(vexp_mz, vtheo_mz, vrp, vexp_sn, vtheo_sn) {
+ScoreMFA <- function(vexp_mz, vtheo_mz, vrp, vexp_sn, vtheo_sn, rp_mult = 6) {
 
-   vsd <- vexp_mz / (6*vrp)
+   if (length(vexp_sn) != length(vtheo_sn)) return(0)
+
+   vsd <- vexp_mz / (rp_mult*vrp)
    ntheo <- length(vtheo_mz)
-   nexp <- length(vtheo_mz)
+   nexp <- length(vexp_mz)
    if(nexp < ntheo){
       vtheo_mz <- vtheo_mz[1:nexp]
       vtheo_sn <- vtheo_sn[1:nexp]
    }
    vovlhn <- numeric(nexp)
    for(i in 1:ntheo){
-      vovlhn[i] <- ovlhn(theo_mz=vtheo_mz[i], exp_mz=vexp_mz[i], theo_sn=vtheo_sn[i], exp_sn=vexp_sn[i], rp=vrp[i])
+      vovlhn[i] <- ovlhn(theo_mz=vtheo_mz[i], exp_mz=vexp_mz[i], theo_sn=vtheo_sn[i], exp_sn=vexp_sn[i], rp=vrp[i], rp_mult = rp_mult)
    }
    Score <- sum(vtheo_sn*vovlhn)/sum(vtheo_sn)
    return(Score)
 
 }
+
+calculate_mma_ppm <-
+   function(
+      obs_mass,
+      theo_mass
+   ) {
+
+      ((obs_mass - theo_mass)/theo_mass) * 1E6
+
+   }

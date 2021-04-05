@@ -1,0 +1,4 @@
+rawFileDir = 1
+rawFileName = 1
+targetSeqData = 1
+outputDir = 1
