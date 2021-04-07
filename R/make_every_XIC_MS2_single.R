@@ -1603,6 +1603,7 @@ make_every_XIC_MS2_single <-
                XIC_cutoff = {XIC_cutoff}
                scoreMFAcutoff = {scoreMFAcutoff}
                cosinesimcutoff = {cosinesimcutoff}
+               SNcutoff = {SNcutoff}
                resPowerMS2 = {resPowerMS2}
                isotopologue_window_multiplier = {isotopologue_window_multiplier}
                mz_window = {mz_window}
