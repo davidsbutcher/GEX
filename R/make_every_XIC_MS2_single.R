@@ -1556,6 +1556,12 @@ make_every_XIC_MS2_single <-
 
       }
 
+      # Trying to deal with problem with futures not freeing up
+      # memory correctly!
+
+      rm(list = ls(all.names = TRUE))
+      gc()
+
 
    }
 
