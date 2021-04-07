@@ -44,7 +44,7 @@ make_every_XIC_MS2_single <-
       XIC_cutoff = 0.0005,
       scoreMFAcutoff = 0.3,
       cosinesimcutoff = 0.99,
-      SNcutoff = 20,
+      SNcutoff = 10,
       resPowerMS2 = 150000,
       isotopologue_window_multiplier = 6,
       mz_window = 5,
@@ -254,27 +254,27 @@ make_every_XIC_MS2_single <-
          stringr::str_trunc(246, "right", ellipsis = "")
 
 
-      if (dir.exists(saveDir) == FALSE) dir.create(saveDir)
+      if (fs::dir_exists(saveDir) == FALSE) fs::dir_create(saveDir)
 
       ## Save target seqs
 
-      message(
-         paste0(
-            "\nSaving target sequences to ",
+      seqs_path  <-
+         fs::path(
             saveDir,
-            "/",
-            fs::path_ext_remove(
-               stringr::str_trunc(
-                  rawFileName, 90, "right", ellipsis = ""
-               )
+            paste0(
+               fs::path_ext_remove(
+                  stringr::str_trunc(
+                     rawFileName, 90, "right", ellipsis = ""
+                  )
+               ),
+               '_target_seqs_MS2'
             ),
-            '_target_seqs.csv'
+            ext = "csv"
          )
-      )
 
-      readr::write_csv(
-         target_seqs_df,
-         path =
+      if (fs::file_exists(seqs_path)) {
+
+         seqs_path <-
             fs::path(
                saveDir,
                paste0(
@@ -288,6 +288,19 @@ make_every_XIC_MS2_single <-
                ),
                ext = "csv"
             )
+
+      }
+
+      message(
+         paste0(
+            "\nSaving target sequences to ",
+            seqs_path
+         )
+      )
+
+      readr::write_csv(
+         target_seqs_df,
+         path = seqs_path
       )
 
       ## Prepare summary datasheet
@@ -693,13 +706,20 @@ make_every_XIC_MS2_single <-
 
          # Save XIC results ------
 
-         saveDirSub <-
+         saveDirXIC <-
             fs::path(
                saveDir,
                "XIC_MS2"
             )
 
-         if (fs::dir_exists(saveDirSub) == FALSE) fs::dir_create(saveDirSub)
+         saveDirIsoDist <-
+            fs::path(
+               saveDir,
+               "IsoDist_MS2"
+            )
+
+         if (fs::dir_exists(saveDirXIC) == FALSE) fs::dir_create(saveDirXIC)
+         if (fs::dir_exists(saveDirIsoDist) == FALSE) fs::dir_create(saveDirIsoDist)
 
          ## Save theo iso distributions -----
 
@@ -707,7 +727,7 @@ make_every_XIC_MS2_single <-
             iso_dist_MS2_cluster,
             path =
                fs::path(
-                  saveDirSub,
+                  saveDirIsoDist,
                   paste0(
                      stringr::str_trunc(
                         names(target_seqs)[[i]], 90, "right", ellipsis = ""),
@@ -721,7 +741,7 @@ make_every_XIC_MS2_single <-
          ggplot2::ggsave(
             filename =
                fs::path(
-                  saveDirSub,
+                  saveDirXIC,
                   paste0(
                      stringr::str_trunc(
                         names(target_seqs)[[i]], 90, "right", ellipsis = ""
@@ -737,9 +757,6 @@ make_every_XIC_MS2_single <-
          # XIC_plots_MS2_marrange is large and no longer needed
 
          rm(XIC_plots_MS2_marrange)
-
-
-
 
          # Extract scans and make spectra ------------------------------------------
 
@@ -1326,35 +1343,41 @@ make_every_XIC_MS2_single <-
                   ),
                   ~purrr::pmap(
                      list(
-                        ..1[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],                   # By subsetting this way, spectra
-                        rep(..2, length(..3))[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff], # with low scoreMFAs are removed
-                        ..3[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..4[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..5[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..6[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..7[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..8[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..9[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..10[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..11[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff],
-                        ..12[..8 > scoreMFAcutoff & ..11 > cosinesimcutoff]
-                     ),
-                     ~make_spectrum_MS2(
                         ..1,
-                        name = ..2,
-                        max_mz = ..3,
-                        scan = ..4,
-                        ion = ..5,
-                        charge = ..6,
-                        isotopologue_window = isotopologue_window_multiplier*(..7/resPowerMS2),
-                        ScoreMFA = ..8,
-                        cosine_sim = ..11,
-                        xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
-                        mz_theo = ..9,
-                        int_theo = ..10,
-                        sn_estimate = ..12,
-                        theme = MStheme01
-                     )
+                        rep(..2, length(..3)),
+                        ..3,
+                        ..4,
+                        ..5,
+                        ..6,
+                        ..7,
+                        ..8,
+                        ..9,
+                        ..10,
+                        ..11,
+                        ..12
+                     ),
+                     ~{
+                        if (..8 > scoreMFAcutoff & ..11 > cosinesimcutoff & max(..12) > SNcutoff) {
+                           make_spectrum_MS2(
+                              ..1,
+                              name = ..2,
+                              max_mz = ..3,
+                              scan = ..4,
+                              ion = ..5,
+                              charge = ..6,
+                              isotopologue_window = isotopologue_window_multiplier*(..7/resPowerMS2),
+                              ScoreMFA = ..8,
+                              cosine_sim = ..11,
+                              xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
+                              mz_theo = ..9,
+                              int_theo = ..10,
+                              sn_estimate = ..12,
+                              theme = MStheme01
+                           )
+                        } else {
+                           NULL
+                        }
+                     }
                   )
                )
             ) %>%
@@ -1394,28 +1417,34 @@ make_every_XIC_MS2_single <-
                   ),
                   ~purrr::pmap(
                      list(
-                        ..1[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff], # By subsetting this way, spectra
-                        ..2[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff], # with low scoreMFAs are removed
-                        ..3[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff],
-                        ..4[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff],
-                        ..5[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff],
-                        ..6[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff],
-                        ..7[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff],
-                        ..8[..6 > scoreMFAcutoff & ..7 > cosinesimcutoff]
+                        ..1,
+                        ..2,
+                        ..3,
+                        ..4,
+                        ..5,
+                        ..6,
+                        ..7,
+                        ..8
                      ),
-                     ~tibble::tibble(
-                        raw_filename = rawFileName,
-                        sequence_name = names(target_seqs)[[i]],
-                        scan = ..1,
-                        max_obs_mz = max(..2),
-                        max_theo_mz = max(..3),
-                        ppm_error = calculate_mma_ppm(max(..2), max(..3)),
-                        ion = ..4,
-                        charge = ..5,
-                        scoreMFA = ..6,
-                        cosineSim = ..7,
-                        mean_SN_estimate = mean(..8)
-                     )
+                     ~{
+                        if (..6 > scoreMFAcutoff & ..7 > cosinesimcutoff & max(..8) > SNcutoff) {
+                           tibble::tibble(
+                              raw_filename = rawFileName,
+                              sequence_name = names(target_seqs)[[i]],
+                              scan = ..1,
+                              max_obs_mz = max(..2),
+                              max_theo_mz = max(..3),
+                              ppm_error = calculate_mma_ppm(max(..2), max(..3)),
+                              ion = ..4,
+                              charge = ..5,
+                              scoreMFA = ..6,
+                              cosineSim = ..7,
+                              max_SN_estimate = max(..8)
+                           )
+                        } else {
+                           NULL
+                        }
+                     }
                   )
                )
             ) %>%
@@ -1427,6 +1456,28 @@ make_every_XIC_MS2_single <-
             ) %>%
             dplyr::bind_rows()
 
+         # Save fragments dataframe for this sequence to saveDirFrag
+
+         saveDirFrag <-
+            fs::path(
+               saveDir,
+               "assigned_fragments_MS2"
+            )
+
+         if (fs::dir_exists(saveDirFrag) == FALSE) fs::dir_create(saveDirFrag)
+
+         writexl::write_xlsx(
+            spectra_MS2_dataframe,
+            path =
+               fs::path(
+                  saveDirFrag,
+                  paste0(
+                     stringr::str_trunc(
+                        names(target_seqs)[[i]], 90, "right", ellipsis = ""),
+                     '_assigned_fragments_MS2.xlsx'
+                  )
+               )
+         )
 
          # Add data frame to summary data frame of assigned fragments
 
@@ -1449,10 +1500,18 @@ make_every_XIC_MS2_single <-
                top = paste0(rawFileName)
             )
 
+         saveDirSpec <-
+            fs::path(
+               saveDir,
+               "specZoom_MS2"
+            )
+
+         if (fs::dir_exists(saveDirSpec) == FALSE) fs::dir_create(saveDirSpec)
+
          ggplot2::ggsave(
             filename =
                fs::path(
-                  saveDirSub,
+                  saveDirSpec,
                   paste0(
                      stringr::str_trunc(
                         names(target_seqs)[[i]], 90, "right", ellipsis = ""
