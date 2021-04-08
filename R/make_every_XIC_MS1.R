@@ -60,6 +60,8 @@ make_every_XIC_MS1 <-
 
       library(rawrr)
 
+      options(dplyr.summarise.inform = FALSE)
+
       # Assertions --------------------------------------------------------------
 
       assertthat::assert_that(
@@ -760,8 +762,6 @@ make_every_XIC_MS1 <-
 
 
       # make_every_spectrum -----------------------------------------------------
-
-      library(rawDiag)
 
       ## ggplot themes -----------------------------------------------------------
 
