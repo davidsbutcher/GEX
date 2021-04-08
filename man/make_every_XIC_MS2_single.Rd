@@ -19,16 +19,16 @@ make_every_XIC_MS2_single(
   fragment_types = c("b", "y"),
   fragment_mz_range = c(300, 2000),
   fragment_pos_cutoff = c(1, 50),
+  abund_cutoff = 5,
   XIC_tol_MS2 = 10,
   XIC_cutoff = 5e-04,
   scoreMFAcutoff = 0.3,
   cosinesimcutoff = 0.99,
-  SNcutoff = 20,
+  SNcutoff = 10,
   resPowerMS2 = 150000,
   isotopologue_window_multiplier = 6,
   mz_window = 5,
   use_IAA = FALSE,
-  abund_cutoff = 5,
   rawrrTemp = tempdir()
 )
 }

@@ -23,7 +23,8 @@ make_every_XIC(
   XIC_tol = 2,
   use_IAA = FALSE,
   save_output = TRUE,
-  abund_cutoff = 15
+  abund_cutoff = 15,
+  rawrrTemp = tempdir()
 )
 }
 \arguments{

@@ -48,10 +48,11 @@ make_every_XIC <-
       XIC_tol = 2,
       use_IAA = FALSE,
       save_output = TRUE,
-      abund_cutoff = 15
+      abund_cutoff = 15,
+      rawrrTemp = tempdir()
    ) {
 
-      library(rawDiag)
+      library(rawrr)
 
       # Assertions --------------------------------------------------------------
 
@@ -571,15 +572,19 @@ make_every_XIC <-
 
       XIC_target_mz <-
          iso_dist_list_union %>%
-         purrr::map(~dplyr::pull(.x, `m/z`)) %>%
+         purrr::map(~dplyr::group_by(.x, charge) %>%
+                       dplyr::filter(abundance == max(abundance)) %>%
+                       dplyr::pull(`m/z`)) %>%
          purrr::map(unique)
 
       XIC <-
          purrr::map(
             XIC_target_mz,
-            ~rawDiag::readXICs(
+            ~rawrr::readChromatogram(
                rawfile = rawFile,
-               masses = .x,
+               mass = .x,
+               filter = "ms",
+               type = "xic",
                tol = XIC_tol
             )
          )
@@ -592,9 +597,21 @@ make_every_XIC <-
 
       rm(XIC)
 
+      # sumXIC1 <-
+      #    XIC_nonull %>%
+      #    purrr::modify_depth(2, tibble::as_tibble) %>%
+      #    purrr::modify_depth(2, ~dplyr::select(.x, times, intensities)) %>%
+      #    purrr::map(purrr::reduce, dplyr::full_join)
+
       sumXIC1 <-
          XIC_nonull %>%
-         purrr::modify_depth(2, tibble::as_tibble) %>%
+         purrr::modify_depth(
+            2,
+            ~tibble::tibble(
+               times = .x$times,
+               intensities = .x$intensities
+            )
+         ) %>%
          purrr::modify_depth(2, ~dplyr::select(.x, times, intensities)) %>%
          purrr::map(purrr::reduce, dplyr::full_join)
 
@@ -615,26 +632,51 @@ make_every_XIC <-
             ~dplyr::pull(.x, times)
          )
 
+      # rawFileMetadata <-
+      #    rawDiag::read.raw(
+      #       rawFile,
+      #       rawDiag = FALSE
+      #    ) %>%
+      #    tibble::as_tibble()
+
       rawFileMetadata <-
-         rawDiag::read.raw(
+         rawrr::readIndex(
             rawFile,
-            rawDiag = FALSE
+            tmpdir = rawrrTemp
          ) %>%
-         tibble::as_tibble()
+         tibble::as_tibble() %>%
+         dplyr::mutate(RT_min = rtinseconds/60)
 
       scanNumber_and_RT <-
          rawFileMetadata %>%
-         dplyr::select(scanNumber, StartTime)
+         dplyr::select(scan, RT_min)
+
+      scanNumber_and_RT_vec <-
+         scanNumber_and_RT$RT_min %>%
+         purrr::set_names(scanNumber_and_RT$scan)
 
 
       scanNumsToRead <-
          purrr::map(
             RT_of_maxTIC,
-            ~dplyr::filter(scanNumber_and_RT, StartTime == .x)
-         ) %>%
-         purrr::map(
-            ~dplyr::pull(.x, scanNumber)
+            ~which(
+               abs(.x - scanNumber_and_RT_vec) ==
+                  min(abs(.x - scanNumber_and_RT_vec))
+            )
          )
+
+
+      # scanNumsToRead <-
+      #    purrr::map(
+      #       RT_of_maxTIC,
+      #       ~dplyr::filter(
+      #          scanNumber_and_RT,
+      #          RT_min == which(min(abs(.x - RT_min)))
+      #       )
+      #    ) %>%
+      #    purrr::map(
+      #       ~dplyr::pull(.x, scan)
+      #    )
 
       # Make summary of XIC data
 

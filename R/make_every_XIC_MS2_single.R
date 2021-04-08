@@ -40,16 +40,16 @@ make_every_XIC_MS2_single <-
       fragment_types = c("b", "y"),
       fragment_mz_range = c(300,2000),
       fragment_pos_cutoff = c(1, 50),
+      abund_cutoff = 5,
       XIC_tol_MS2 = 10,
-      XIC_cutoff = 0.0005,
+      XIC_cutoff = 0.000001,
       scoreMFAcutoff = 0.3,
       cosinesimcutoff = 0.99,
-      SNcutoff = 10,
+      SN_cutoff = 10,
       resPowerMS2 = 150000,
       isotopologue_window_multiplier = 6,
       mz_window = 5,
       use_IAA = FALSE,
-      abund_cutoff = 5,
       rawrrTemp = tempdir()
    ) {
 
@@ -1357,7 +1357,7 @@ make_every_XIC_MS2_single <-
                         ..12
                      ),
                      ~{
-                        if (..8 > scoreMFAcutoff & ..11 > cosinesimcutoff & max(..12) > SNcutoff) {
+                        if (..8 > scoreMFAcutoff & ..11 > cosinesimcutoff & max(..12) > SN_cutoff) {
                            make_spectrum_MS2(
                               ..1,
                               name = ..2,
@@ -1427,7 +1427,7 @@ make_every_XIC_MS2_single <-
                         ..8
                      ),
                      ~{
-                        if (..6 > scoreMFAcutoff & ..7 > cosinesimcutoff & max(..8) > SNcutoff) {
+                        if (..6 > scoreMFAcutoff & ..7 > cosinesimcutoff & max(..8) > SN_cutoff) {
                            tibble::tibble(
                               raw_filename = rawFileName,
                               sequence_name = names(target_seqs)[[i]],
@@ -1603,7 +1603,7 @@ make_every_XIC_MS2_single <-
                XIC_cutoff = {XIC_cutoff}
                scoreMFAcutoff = {scoreMFAcutoff}
                cosinesimcutoff = {cosinesimcutoff}
-               SNcutoff = {SNcutoff}
+               SN_cutoff = {SN_cutoff}
                resPowerMS2 = {resPowerMS2}
                isotopologue_window_multiplier = {isotopologue_window_multiplier}
                mz_window = {mz_window}

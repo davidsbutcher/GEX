@@ -309,54 +309,54 @@ make_every_spectrum <-
 
       # Find potential MS2 scans
 
-      message("Trying to find potential MS2 scans")
-
-      rawFileMetadataMS2 <-
-         rawFileMetadata %>%
-         dplyr::select(scanNumber, StartTime, MSOrder, MS2IsolationWidth, PrecursorMass, TIC) %>%
-         dplyr::filter(MSOrder == "Ms2") %>%
-         dplyr::mutate(isoWindowLow = PrecursorMass - MS2IsolationWidth/2) %>%
-         dplyr::mutate(isoWindowHigh = PrecursorMass + MS2IsolationWidth/2)
-
-      potential_MS2 <-
-         mz_max_abund %>%
-         purrr::map(
-            ~purrr::map(
-               .x,
-               ~{
-                  dplyr::filter(
-                     rawFileMetadataMS2,
-                     .x > isoWindowLow & .x < isoWindowHigh
-                  ) %>%
-                     dplyr::arrange(dplyr::desc(TIC)) %>%
-                     dplyr::pull(scanNumber) %>%
-                     as.character() %>%
-                     paste(collapse = ", ")
-               }
-            )
-         ) %>%
-         purrr::map2(
-            mz_max_abund_charge,
-            ~rlang::set_names(.x, .y)
-         )
-
-      potential_MS2_output <-
-         purrr::map(
-            potential_MS2,
-            tibble::enframe,
-            name = "charge",
-            value = "potential_MS2_scans"
-         ) %>%
-         purrr::map(
-            tidyr::unnest,
-            cols = c(potential_MS2_scans)
-         ) %>%
-         purrr::imap(
-            ~dplyr::mutate(.x, name = .y)
-         ) %>%
-         purrr::reduce(dplyr::union_all) %>%
-         dplyr::filter(potential_MS2_scans != "") %>%
-         dplyr::select(name, charge, potential_MS2_scans)
+      # message("Trying to find potential MS2 scans")
+      #
+      # rawFileMetadataMS2 <-
+      #    rawFileMetadata %>%
+      #    dplyr::select(scanNumber, StartTime, MSOrder, MS2IsolationWidth, PrecursorMass, TIC) %>%
+      #    dplyr::filter(MSOrder == "Ms2") %>%
+      #    dplyr::mutate(isoWindowLow = PrecursorMass - MS2IsolationWidth/2) %>%
+      #    dplyr::mutate(isoWindowHigh = PrecursorMass + MS2IsolationWidth/2)
+      #
+      # potential_MS2 <-
+      #    mz_max_abund %>%
+      #    purrr::map(
+      #       ~purrr::map(
+      #          .x,
+      #          ~{
+      #             dplyr::filter(
+      #                rawFileMetadataMS2,
+      #                .x > isoWindowLow & .x < isoWindowHigh
+      #             ) %>%
+      #                dplyr::arrange(dplyr::desc(TIC)) %>%
+      #                dplyr::pull(scanNumber) %>%
+      #                as.character() %>%
+      #                paste(collapse = ", ")
+      #          }
+      #       )
+      #    ) %>%
+      #    purrr::map2(
+      #       mz_max_abund_charge,
+      #       ~rlang::set_names(.x, .y)
+      #    )
+      #
+      # potential_MS2_output <-
+      #    purrr::map(
+      #       potential_MS2,
+      #       tibble::enframe,
+      #       name = "charge",
+      #       value = "potential_MS2_scans"
+      #    ) %>%
+      #    purrr::map(
+      #       tidyr::unnest,
+      #       cols = c(potential_MS2_scans)
+      #    ) %>%
+      #    purrr::imap(
+      #       ~dplyr::mutate(.x, name = .y)
+      #    ) %>%
+      #    purrr::reduce(dplyr::union_all) %>%
+      #    dplyr::filter(potential_MS2_scans != "") %>%
+      #    dplyr::select(name, charge, potential_MS2_scans)
 
       timer$stop("Make MS, Top 1 most intense PART 1")
 
@@ -841,25 +841,29 @@ make_every_spectrum <-
                   ..10,
                   ..11
                ),
-               ~make_spectrum_top1(
-                  df = ..1,
-                  x = mz,
-                  y = intensity,
-                  noise = noise,
-                  accession = ..2,
-                  scan_num = scan,
-                  charge = ..4,
-                  xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
-                  ..5,
-                  vlines = ..6,
-                  chargestateTIC = ..7,
-                  cosine_sims = ..8,
-                  mz_all_abund = ..9,
-                  iso_abund_theoretical_scaled = ..10,
-                  isotopologue_window = isotopologue_window_multiplier*(..9/resPowerMS1),
-                  theme = MStheme01,
-                  score_mfa = ..11
-               )
+               ~{
+                  if (..11 > mean_score_mfa_cutoff & ..8 > mean_cosine_sim_cutoff & mean(dplyr::pull(..1, noise)) > SN_cutoff) {
+                     make_spectrum_top1(
+                        df = ..1,
+                        x = mz,
+                        y = intensity,
+                        noise = noise,
+                        accession = ..2,
+                        scan_num = scan,
+                        charge = ..4,
+                        xrange = c(..3 - (mz_window/2), ..3 + (mz_window/2)),
+                        ..5,
+                        vlines = ..6,
+                        chargestateTIC = ..7,
+                        cosine_sims = ..8,
+                        mz_all_abund = ..9,
+                        iso_abund_theoretical_scaled = ..10,
+                        isotopologue_window = isotopologue_window_multiplier*(..9/resPowerMS1),
+                        theme = MStheme01,
+                        score_mfa = ..11
+                     )
+                  }
+               }
             ) %>%
                purrr::set_names(..4)
          ) %>%
@@ -971,18 +975,18 @@ make_every_spectrum <-
 
       }
 
-      # Save potential MS2 scans info
-
-      readr::write_csv(
-         potential_MS2_output,
-         fs::path(
-            saveDir,
-            paste0(
-               fs::path_ext_remove(rawFileName),
-               "_MS2.csv"
-            )
-         )
-      )
+      # # Save potential MS2 scans info
+      #
+      # readr::write_csv(
+      #    potential_MS2_output,
+      #    fs::path(
+      #       saveDir,
+      #       paste0(
+      #          fs::path_ext_remove(rawFileName),
+      #          "_MS2.csv"
+      #       )
+      #    )
+      # )
 
       # Save max TIC for charge states
 
