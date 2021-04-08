@@ -114,8 +114,8 @@ make_spectrum_top1 =
       chargestateTIC = NULL,
       cosine_sims = NULL,
       score_mfa = NULL,
-      mz_all_abund = NULL,
-      iso_abund_theoretical_scaled = NULL,
+      mz_theo = NULL,
+      intensity_theo = NULL,
       isotopologue_window = NULL,
       theme  = NULL
    ) {
@@ -184,8 +184,8 @@ make_spectrum_top1 =
       }
 
       theo_points <-
-         iso_abund_theoretical_scaled %>%
-         purrr::set_names(mz_all_abund) %>%
+         intensity_theo %>%
+         purrr::set_names(mz_theo) %>%
          tibble::enframe(name = "mz", value = "intensity") %>%
          dplyr::mutate(mz = as.double(mz))
 
@@ -203,16 +203,6 @@ make_spectrum_top1 =
             size = 2.5,
             alpha = 0.5
          ) +
-         # ggplot2::annotate(
-         #    "tile",
-         #    x = mean(xrange),
-         #    y = 0,
-         #    width = isotopologue_window*10,
-         #    height = ymax,
-         #    fill = "red4",
-         #    alpha = 0.5,
-         #    linetype = "blank"
-         # ) +
          ggplot2::annotate(
             "rect",
             xmin = mean(xrange)-(isotopologue_window/2),
@@ -225,24 +215,14 @@ make_spectrum_top1 =
          ) +
          ggplot2::annotate(
             "rect",
-            xmin = mz_all_abund-(isotopologue_window/2),
-            xmax = mz_all_abund+(isotopologue_window/2),
+            xmin = mz_theo-(isotopologue_window/2),
+            xmax = mz_theo+(isotopologue_window/2),
             ymin = 0,
             ymax = theo_points$intensity,
             fill = "red",
             alpha = 0.25,
             linetype = "blank"
          ) +
-         # ggplot2::annotate(
-         #    "tile",
-         #    x = vlines,
-         #    y = rep(0, length(vlines)),
-         #    width = isotopologue_window*10,
-         #    height = ymax,
-         #    fill = "red",
-         #    alpha = 0.5,
-         #    linetype = "blank"
-         # ) +
          ggplot2::geom_hline(
             ggplot2::aes(
                yintercept = noise,
@@ -251,27 +231,16 @@ make_spectrum_top1 =
             ),
             color = "blue"
          ) +
-         # ggplot2::annotate(
-         #    "segment",
-         #    x = vlines,
-         #    xend = vlines,
-         #    y = 0,
-         #    yend = ymax,
-         #    color = "red",
-         #    alpha = 0.35,
-         #    size = 0.25,
-         #    linetype = "longdash"
-         # ) +
-      ggplot2::annotate(
-         "text",
-         x = xrange[[2]],
-         y = ymax,
-         label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\nPTM: {PTMname}\n ScoreMFA: {round((score_mfa), digits = 3)}"),
-         vjust="inward",
-         hjust="inward",
-         size = 2,
-         alpha = 0.5
-      ) +
+         ggplot2::annotate(
+            "text",
+            x = xrange[[2]],
+            y = ymax,
+            label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\nPTM: {PTMname}\n ScoreMFA: {round((score_mfa), digits = 3)}"),
+            vjust="inward",
+            hjust="inward",
+            size = 2,
+            alpha = 0.5
+         ) +
          ggplot2::lims(
             x = xrange,
             y = c(0, ymax)

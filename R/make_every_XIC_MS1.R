@@ -33,11 +33,11 @@ make_every_XIC_MS1 <-
       rawFileName = NULL,
       targetSeqData = NULL,
       outputDir = getwd(),
-      target_col_name = c("UNIPROTKB"),
-      target_sequence_col_name = c("ProteoformSequence"),
-      PTMname_col_name = c("PTMname"),
-      PTMformula_col_name1 = c("FormulaToAdd"),
-      PTMformula_col_name2 = c("FormulaToSubtract"),
+      target_col_name = "UNIPROTKB",
+      target_sequence_col_name = "ProteoformSequence",
+      PTMname_col_name = "PTMname",
+      PTMformula_col_name1 = "FormulaToAdd",
+      PTMformula_col_name2 = "FormulaToSubtract",
       isoAbund = c("12C" = 0.9893, "14N" = 0.99636),
       target_charges = c(1:50),
       mass_range = c(0,100000),
@@ -148,11 +148,6 @@ make_every_XIC_MS1 <-
          rawFilesInDir %>%
          stringr::str_subset(rawFileName)
 
-      # Make timer ------------------------------------------------------
-
-      timer <-
-         timeR::createTimer(verbose = FALSE)
-
       # ggplot themes -----------------------------------------------------------
 
       XICtheme <-
@@ -234,6 +229,32 @@ make_every_XIC_MS1 <-
          ) %>%
          tibble::deframe() %>%
          as.list()
+
+      # Create save directory ---------------------------------------------------
+
+      systime <- format(Sys.time(), "%Y%m%d_%H%M")
+      systime2 <- Sys.time()
+
+      saveDir <-
+         fs::path(
+            outputDir,
+            paste0(
+               systime,
+               "_",
+               fs::path_ext_remove(rawFileName),
+               "_",
+               length(target_seqs),
+               "seqs"
+            )
+         ) %>%
+         stringr::str_trunc(246, "right", ellipsis = "")
+
+
+      if (fs::dir_exists(saveDir) == FALSE) fs::dir_create(saveDir)
+
+      timer <-
+         timeR::createTimer(verbose = FALSE)
+
 
       # Get elemental composition -----------------------------------------------
 
@@ -636,27 +657,6 @@ make_every_XIC_MS1 <-
 
          timer$stop("Calculate and plot XICs")
 
-         # Create save directory ---------------------------------------------------
-
-         systime <- format(Sys.time(), "%Y%m%d_%H%M")
-
-         saveDir <-
-            fs::path(
-               outputDir,
-               paste0(
-                  systime,
-                  "_",
-                  fs::path_ext_remove(rawFileName),
-                  "_",
-                  length(target_seqs),
-                  "seqs"
-               )
-            ) %>%
-            stringr::str_trunc(246, "right", ellipsis = "")
-
-
-         if (fs::dir_exists(saveDir) == FALSE) fs::dir_create(saveDir)
-
          # Save XIC results --------------------------------------------------------
 
          timer$start("Save XIC results")
@@ -876,7 +876,7 @@ make_every_XIC_MS1 <-
 
       message("Getting relative abundances of isotopologues")
 
-      mz_all_abund <-
+      mz_theo_MS1 <-
          iso_dist_list_union %>%
          purrr::map(
             ~dplyr::group_by(.x, charge) %>%
@@ -896,7 +896,7 @@ make_every_XIC_MS1 <-
 
       message("Getting isotopologue abundance per charge state")
 
-      iso_abund_per_charge_state <-
+      intensity_theo_MS1 <-
          iso_dist_list_union %>%
          purrr::map(
             ~dplyr::group_by(.x, charge) %>%
@@ -997,10 +997,10 @@ make_every_XIC_MS1 <-
 
       message("Getting intensities for all isotopologues")
 
-      results_isotopologueTICs <-
+      intensity_obs_MS1 <-
          purrr::map2(
             spectra_highestTIC %>% purrr::map(list),
-            mz_all_abund,
+            mz_theo_MS1,
             ~purrr::map2(
                .x,
                .y,
@@ -1024,10 +1024,10 @@ make_every_XIC_MS1 <-
 
       message("Getting m/z values at max intensity for all isotopologues")
 
-      results_isotopologueMZ <-
+      mz_obs_MS1 <-
          purrr::map2(
             spectra_highestTIC %>% purrr::map(list),
-            mz_all_abund,
+            mz_theo_MS1,
             ~purrr::map2(
                .x,
                .y,
@@ -1056,8 +1056,8 @@ make_every_XIC_MS1 <-
 
       intensity_theo_scaling_factors <-
          purrr::map2(
-            results_isotopologueTICs,
-            iso_abund_per_charge_state,
+            intensity_obs_MS1,
+            intensity_theo_MS1,
             ~purrr::map2(
                .x = .x,
                .y = .y,
@@ -1066,12 +1066,12 @@ make_every_XIC_MS1 <-
          )
 
 
-      iso_abund_theoretical_scaled <-
+      intensity_theo_MS1_scaled <-
          purrr::pmap(
             list(
-               iso_abund_per_charge_state,
+               intensity_theo_MS1,
                intensity_theo_scaling_factors,
-               results_isotopologueTICs
+               intensity_obs_MS1
             ),
             ~purrr::pmap(
                list(
@@ -1094,7 +1094,7 @@ make_every_XIC_MS1 <-
          purrr::pmap(
             list(
                spectra_highestTIC,
-               mz_all_abund
+               mz_theo_MS1
             ),
             ~purrr::pmap(
                list(
@@ -1124,7 +1124,7 @@ make_every_XIC_MS1 <-
       rp_obs_MS1_df <-
          purrr::map2(
             rp_obs_MS1,
-            mz_all_abund,
+            mz_theo_MS1,
             ~purrr::map2(
                .x,
                .y,
@@ -1151,7 +1151,7 @@ make_every_XIC_MS1 <-
 
       rp_theo_MS1 <-
          purrr::map_depth(
-            mz_all_abund,
+            mz_theo_MS1,
             2,
             ~predict(
                resolving_power_model,
@@ -1187,8 +1187,8 @@ make_every_XIC_MS1 <-
 
       cosine_sims <-
          purrr::map2(
-            results_isotopologueTICs,
-            iso_abund_per_charge_state,
+            intensity_obs_MS1,
+            intensity_theo_MS1,
             ~purrr::map2(
                .x,
                .y,
@@ -1206,9 +1206,9 @@ make_every_XIC_MS1 <-
 
       ## Calculate S/N estimates
 
-      SN_estimate_obs <-
+      SN_estimate_obs_MS1 <-
          purrr::map2(
-            results_isotopologueTICs,
+            intensity_obs_MS1,
             mz_max_abund_noise,
             ~purrr::map2(
                .x,
@@ -1230,12 +1230,12 @@ make_every_XIC_MS1 <-
          )
 
 
-      SN_estimate_theo <-
+      SN_estimate_theo_MS1 <-
          purrr::pmap(
             list(
-               iso_abund_theoretical_scaled,
+               intensity_theo_MS1_scaled,
                mz_max_abund_noise,
-               SN_estimate_obs
+               SN_estimate_obs_MS1
             ),
             ~purrr::pmap(
                list(
@@ -1248,21 +1248,21 @@ make_every_XIC_MS1 <-
                # {if (is.nan(.) | is.null(.) | is.infinite(.)) rep(0, length(.x)) else .}
             )
          ) %>%
-      purrr::map2(
-         standard_lengths,
-         ~fix_list_length(.x, .y)
-      )
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
+         )
 
       ## Calculate Mel's ScoreMFA
 
       score_MFA <-
          purrr::pmap(
             list(
-               results_isotopologueMZ,
-               mz_all_abund,
+               mz_obs_MS1,
+               mz_theo_MS1,
                rp_obs_theo_hybrid_MS1,
-               SN_estimate_obs,
-               SN_estimate_theo
+               SN_estimate_obs_MS1,
+               SN_estimate_theo_MS1
             ),
             ~purrr::pmap(
                list(
@@ -1292,11 +1292,11 @@ make_every_XIC_MS1 <-
 
       # saveRDS(score_MFA, paste0(saveDir, "/score_MFA.rds"))
       #
-      # saveRDS(results_isotopologueMZ, paste0(saveDir, "/results_isotopologueMZ.rds"))
-      # saveRDS(mz_all_abund, paste0(saveDir, "/mz_all_abund.rds"))
+      # saveRDS(mz_obs_MS1, paste0(saveDir, "/mz_obs_MS1.rds"))
+      # saveRDS(mz_theo_MS1, paste0(saveDir, "/mz_theo_MS1.rds"))
       #
-      # saveRDS(SN_estimate_obs, paste0(saveDir, "/SN_estimate_obs.rds"))
-      # saveRDS(SN_estimate_theo, paste0(saveDir, "/SN_estimate_theo.rds"))
+      # saveRDS(SN_estimate_obs_MS1, paste0(saveDir, "/SN_estimate_obs_MS1.rds"))
+      # saveRDS(SN_estimate_theo_MS1, paste0(saveDir, "/SN_estimate_theo_MS1.rds"))
 
       ## Make table with all charge state TICs
 
@@ -1385,8 +1385,8 @@ make_every_XIC_MS1 <-
                iso_dist_vlines2,
                results_chargestateTICs,
                cosine_sims,
-               mz_all_abund,
-               iso_abund_theoretical_scaled,
+               mz_theo_MS1,
+               intensity_theo_MS1_scaled,
                score_MFA
             ),
             ~purrr::pmap(
@@ -1418,8 +1418,8 @@ make_every_XIC_MS1 <-
                         vlines = ..6,
                         chargestateTIC = ..7,
                         cosine_sims = ..8,
-                        mz_all_abund = ..9,
-                        iso_abund_theoretical_scaled = ..10,
+                        mz_theo = ..9,
+                        intensity_theo = ..10,
                         isotopologue_window = isotopologue_window_multiplier*(..9/resPowerMS1),
                         theme = MStheme01,
                         score_mfa = ..11
@@ -1502,6 +1502,57 @@ make_every_XIC_MS1 <-
          limitsize = FALSE
       )
 
+
+      # Write params to text file
+
+      params_path <-
+         fs::path(
+            saveDir,
+            'GEX_params_MS1.txt'
+         )
+
+      if (!fs::file_exists(params_path)) {
+
+         readr::write_lines(
+            glue::glue(
+               "
+               ----------------
+               {systime2}
+               ----------------
+               rawFileDir = {toString(rawFileDir)}
+               rawFileName = {toString(rawFileName)}
+               targetSeqData = {toString(targetSeqData)}
+               outputDir = {toString(outputDir)}
+               target_col_name = {rlang::as_name(target_col_name)}
+               target_sequence_col_name = {rlang::as_name(target_sequence_col_name)}
+               PTMname_col_name = {rlang::as_name(PTMname_col_name)}
+               PTMformula_col_name1 = {rlang::as_name(PTMformula_col_name1)}
+               PTMformula_col_name2 = {rlang::as_name(PTMformula_col_name2)}
+               isoNames = {toString(names(isoAbund))}
+               isoAbund = {toString(isoAbund)}
+               target_charges = {toString(target_charges)}
+               mass_range = {toString(mass_range)}
+               mz_range = {toString(mz_range)}
+               abund_cutoff = {abund_cutoff}
+               XIC_tol = {XIC_tol}
+               use_IAA = {use_IAA}
+               save_output = {save_output}
+               scoreMFAcutoff = {scoreMFAcutoff}
+               cosinesimcutoff = {cosinesimcutoff}
+               SN_cutoff = {SN_cutoff}
+               resPowerMS1 = {resPowerMS1}
+               isotopologue_window_multiplier = {isotopologue_window_multiplier}
+               mz_window = {mz_window}
+               return_timers = {return_timers}
+               abund_cutoff = {abund_cutoff}
+               rawrrTemp = {rawrrTemp}
+               "
+            ),
+            file = params_path
+         )
+
+      }
+
       message("\n\n make_every_spectrum done")
 
       timer$stop("Save MS, Top 1, PDF")
@@ -1516,7 +1567,6 @@ make_every_XIC_MS1 <-
             spectra_highestTIC_plots
          )
       }
-
 
 
    }
