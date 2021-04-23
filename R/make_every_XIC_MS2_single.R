@@ -11,11 +11,21 @@
 #' @param PTMformula_col_name2
 #' @param isoAbund
 #' @param fragment_charges
+#' @param fragment_types
 #' @param fragment_mz_range
 #' @param fragment_pos_cutoff
-#' @param XIC_tol_MS2
-#' @param use_IAA
 #' @param abund_cutoff
+#' @param XIC_tol_MS2
+#' @param XIC_cutoff
+#' @param scoreMFAcutoff
+#' @param cosinesimcutoff
+#' @param SN_cutoff
+#' @param resPowerMS2
+#' @param isotopologue_window_multiplier
+#' @param mz_window
+#' @param use_IAA
+#' @param rawrrTemp
+#' @param save_spec_object
 #'
 #' @return
 #' @export
@@ -35,7 +45,7 @@ make_every_XIC_MS2_single <-
       PTMname_col_name = "PTMname",
       PTMformula_col_name1 = "FormulaToAdd",
       PTMformula_col_name2 = "FormulaToSubtract",
-      isoAbund = c("12C" = 0.9893, "14N" = 0.99636),
+      isoAbund = c("12C" = 0.9889, "14N" = 0.99636),
       fragment_charges = c(1:50),
       fragment_types = c("b", "y"),
       fragment_mz_range = c(300,2000),
@@ -50,7 +60,8 @@ make_every_XIC_MS2_single <-
       isotopologue_window_multiplier = 6,
       mz_window = 5,
       use_IAA = FALSE,
-      rawrrTemp = tempdir()
+      rawrrTemp = tempdir(),
+      save_spec_object = FALSE
    ) {
 
       # Load rawrr package
@@ -256,7 +267,7 @@ make_every_XIC_MS2_single <-
 
       if (fs::dir_exists(saveDir) == FALSE) fs::dir_create(saveDir)
 
-      ## Save target seqs
+      ## Save target seqs ----
 
       seqs_path  <-
          fs::path(
@@ -300,18 +311,110 @@ make_every_XIC_MS2_single <-
 
       readr::write_csv(
          target_seqs_df,
-         path = seqs_path
+         file = seqs_path
       )
 
-      ## Prepare summary datasheet
+      ## Write params to text file ----
+
+      params_path <-
+         fs::path(
+            saveDir,
+            'GEX_params.txt'
+         )
+
+      if (!fs::file_exists(params_path)) {
+
+         readr::write_lines(
+            glue::glue(
+               "
+               ----------------
+               {systime2}
+               ----------------
+               rawFileDir = {toString(rawFileDir)}
+               rawFileName = {toString(rawFileName)}
+               targetSeqData = {toString(targetSeqData)}
+               outputDir = {toString(outputDir)}
+               target_col_name = {rlang::as_name(target_col_name)}
+               target_sequence_col_name = {rlang::as_name(target_sequence_col_name)}
+               PTMname_col_name = {rlang::as_name(PTMname_col_name)}
+               PTMformula_col_name1 = {rlang::as_name(PTMformula_col_name1)}
+               PTMformula_col_name2 = {rlang::as_name(PTMformula_col_name2)}
+               isoNames = {toString(names(isoAbund))}
+               isoAbund = {toString(isoAbund)}
+               fragment_charges = {toString(fragment_charges)}
+               fragment_types = {toString(fragment_types)}
+               fragment_mz_range = {toString(fragment_mz_range)}
+               fragment_pos_cutoff = {toString(fragment_pos_cutoff)}
+               XIC_tol_MS2 = {XIC_tol_MS2}
+               XIC_cutoff = {XIC_cutoff}
+               scoreMFAcutoff = {scoreMFAcutoff}
+               cosinesimcutoff = {cosinesimcutoff}
+               SN_cutoff = {SN_cutoff}
+               resPowerMS2 = {resPowerMS2}
+               isotopologue_window_multiplier = {isotopologue_window_multiplier}
+               mz_window = {mz_window}
+               use_IAA = {use_IAA}
+               abund_cutoff = {abund_cutoff}
+               "
+            ),
+            file = params_path
+         )
+
+      }
+
+
+      ## Prepare summary datasheet ----
 
       spectra_MS2_dataframe_union <-
          tibble::tibble()
 
 
+      # Create save path for summary of assigned fragments
+
+      sum_path <-
+         fs::path(
+            saveDir,
+            paste0(
+               fs::path_ext_remove(
+                  stringr::str_trunc(
+                     rawFileName, 90, "right", ellipsis = ""
+                  )
+               ),
+               '_assigned_fragments_MS2.xlsx'
+            )
+         )
+
+
+      ## Wrap functions ----------------------------------------------------------
+
+      possibly_write_xlsx <-
+         purrr::possibly(
+            writexl::write_xlsx,
+            otherwise = NULL
+         )
+
+
+      ## Prepare timer -----------------------------------------------------------
+
+      timer <-
+         timeR::createTimer(verbose = FALSE)
+
+      timer_df <-
+         tibble::tibble()
+
+      # Create save path for timer summary
+
+      timer_path <-
+         fs::path(
+            saveDir,
+            'GEX_timers.csv'
+         )
+
       # Get elemental compositions ----------------------------------------------
 
       for (i in seq_along(target_seqs)) {
+
+         timer$start("1. Fragment library generation and isodist simulation")
 
          # Generate all possible fragments
 
@@ -521,7 +624,11 @@ make_every_XIC_MS2_single <-
                   )
             )
 
+         timer$stop("1. Fragment library generation and isodist simulation")
+
          # Read XICs --------
+
+         timer$start("2. Read XICs")
 
          # Get max TIC for MS2s from rawfile
 
@@ -552,6 +659,10 @@ make_every_XIC_MS2_single <-
                   )
                )
             )
+
+         timer$stop("2. Read XICs")
+
+         timer$start("3. Process XICs")
 
          # Make blank tibble to replace NULL tibbles
 
@@ -660,8 +771,11 @@ make_every_XIC_MS2_single <-
                   dplyr::pull(int_sum)
             )
 
+         timer$stop("3. Process XICs")
 
          # Plot XICs -------------------------------------------------------------
+
+         timer$start("4. Plot XICs and save XICs/isodists")
 
          XIC_plots_MS2 <-
             purrr::pmap(
@@ -692,7 +806,7 @@ make_every_XIC_MS2_single <-
                )
             )
 
-         message(glue::glue("\nSaving XICs for {names(target_seqs)[[i]]}"))
+         message(glue::glue("\n\nSaving XICs for {names(target_seqs)[[i]]}"))
          message(paste("Memory used:", pryr::mem_used()/1000000, "MB"))
 
 
@@ -758,7 +872,11 @@ make_every_XIC_MS2_single <-
 
          rm(XIC_plots_MS2_marrange)
 
+         timer$stop("4. Plot XICs and save XICs/isodists")
+
          # Extract scans and make spectra ------------------------------------------
+
+         timer$start("5. Extract MS data")
 
          rawFileMetadata <-
             rawrr::readIndex(
@@ -833,7 +951,6 @@ make_every_XIC_MS2_single <-
          # Read the scan with max TIC for each fragment and subset it to the
          # desired range
 
-
          scans_to_plot <-
             purrr::pmap(
                list(
@@ -868,6 +985,13 @@ make_every_XIC_MS2_single <-
                      )
                )
             )
+
+         timer$stop("5. Extract MS data")
+
+         timer$start("6. Process MS data")
+
+
+         # Process MS data ----
 
          # Get noise for every scan being plotted to use for S/N calculation
 
@@ -1207,8 +1331,6 @@ make_every_XIC_MS2_single <-
                )
             )
 
-
-
          # Calculate ScoreMFA
 
          score_MFA_MS2 <-
@@ -1276,8 +1398,11 @@ make_every_XIC_MS2_single <-
                )
             )
 
+         timer$stop("6. Process MS data")
 
          # Prepare data for plotting
+
+         timer$start("7. Plot MS data, save plots and spreadsheets")
 
          ion_names_MS2 <-
             iso_dist_cluster_trunc %>%
@@ -1487,7 +1612,24 @@ make_every_XIC_MS2_single <-
                spectra_MS2_dataframe
             )
 
-         message(glue::glue("\nSaving spectra for {names(target_seqs)[[i]]}"))
+         # Save data frame of fragments which beat ScoreMFA cutoff
+
+         message("\nWriting all 'assigned' fragment ions to spreadsheets")
+
+         # writexl::write_xlsx(
+         #    spectra_MS2_dataframe_union,
+         #    path = sum_path
+         # )
+
+         possibly_write_xlsx(
+            spectra_MS2_dataframe_union,
+            path = sum_path
+         )
+
+         # Check memory usage
+
+
+         message(glue::glue("\n\nSaving spectra for {names(target_seqs)[[i]]}"))
          message(paste("Memory used:", pryr::mem_used()/1000000, "MB"))
 
          spectra_MS2_marrange <-
@@ -1525,96 +1667,59 @@ make_every_XIC_MS2_single <-
             limitsize = FALSE
          )
 
-      }
+         timer$stop("7. Plot MS data, save plots and spreadsheets")
 
-      # Save data frame of fragments which beat ScoreMFA cutoff
+         # Process timers
 
-      message("\nWriting all 'assigned' fragment ions to spreadsheet")
+         timer_df_temp <-
+            timeR::getTimer(timer) %>%
+            tibble::as_tibble()
 
-      sum_path <-
-         fs::path(
-            saveDir,
-            paste0(
-               fs::path_ext_remove(
-                  stringr::str_trunc(
-                     rawFileName, 90, "right", ellipsis = ""
-                  )
-               ),
-               '_assigned_fragments_MS2.xlsx'
+         timer_df <-
+            dplyr::bind_rows(
+               list(
+                  timer_df,
+                  timer_df_temp
+               )
             )
-         )
 
-      if (fs::file_exists(sum_path)) {
+         # SAVE PLOTS OBJECT, FOR DEV PURPOSES
 
-         sum_path <-
-            fs::path(
-               saveDir,
-               paste0(
-                  fs::path_ext_remove(
+         if (save_spec_object == TRUE) {
+
+            message(glue::glue("\n\nSaving spectra object for {names(target_seqs)[[i]]}"))
+
+            saveDirSpecObject <-
+               fs::path(
+                  saveDirSpec,
+                  paste0(
                      stringr::str_trunc(
-                        rawFileName, 90, "right", ellipsis = ""
-                     )
-                  ),
-                  '_assigned_fragments_MS2_',
-                  rand_string
-               ),
-               ext = "xlsx"
-            )
+                        names(target_seqs)[[i]], 90, "right", ellipsis = ""
+                     ),
+                     '_specObject_MS2.rds'
+                  )
+               )
+
+            saveRDS(spectra_MS2, saveDirSpecObject)
+
+         }
 
       }
 
-      writexl::write_xlsx(
-         spectra_MS2_dataframe_union,
-         path = sum_path
+      timer_df_sum <-
+         timer_df %>%
+         dplyr::group_by(event) %>%
+         dplyr::summarize(
+            time_elapsed_sec = sum(timeElapsed)
+         ) %>%
+         dplyr::mutate(
+            time_elapsed_min = time_elapsed_sec/60
+         )
+
+      readr::write_csv(
+         timer_df_sum,
+         file = timer_path
       )
-
-      # Write params to text file
-
-      params_path <-
-         fs::path(
-            saveDir,
-            'GEX_params.txt'
-         )
-
-      if (!fs::file_exists(params_path)) {
-
-         readr::write_lines(
-            glue::glue(
-               "
-               ----------------
-               {systime2}
-               ----------------
-               rawFileDir = {toString(rawFileDir)}
-               rawFileName = {toString(rawFileName)}
-               targetSeqData = {toString(targetSeqData)}
-               outputDir = {toString(outputDir)}
-               target_col_name = {rlang::as_name(target_col_name)}
-               target_sequence_col_name = {rlang::as_name(target_sequence_col_name)}
-               PTMname_col_name = {rlang::as_name(PTMname_col_name)}
-               PTMformula_col_name1 = {rlang::as_name(PTMformula_col_name1)}
-               PTMformula_col_name2 = {rlang::as_name(PTMformula_col_name2)}
-               isoNames = {toString(names(isoAbund))}
-               isoAbund = {toString(isoAbund)}
-               fragment_charges = {toString(fragment_charges)}
-               fragment_types = {toString(fragment_types)}
-               fragment_mz_range = {toString(fragment_mz_range)}
-               fragment_pos_cutoff = {toString(fragment_pos_cutoff)}
-               XIC_tol_MS2 = {XIC_tol_MS2}
-               XIC_cutoff = {XIC_cutoff}
-               scoreMFAcutoff = {scoreMFAcutoff}
-               cosinesimcutoff = {cosinesimcutoff}
-               SN_cutoff = {SN_cutoff}
-               resPowerMS2 = {resPowerMS2}
-               isotopologue_window_multiplier = {isotopologue_window_multiplier}
-               mz_window = {mz_window}
-               use_IAA = {use_IAA}
-               abund_cutoff = {abund_cutoff}
-               "
-            ),
-            file = params_path
-         )
-
-      }
 
       # Trying to deal with problem with futures not freeing up
       # memory correctly!

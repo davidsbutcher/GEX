@@ -10,14 +10,23 @@
 #' @param PTMformula_col_name1
 #' @param PTMformula_col_name2
 #' @param isoAbund
-#' @param sample_n_pforms
-#' @param mass_range
 #' @param target_charges
+#' @param mass_range
 #' @param mz_range
+#' @param abund_cutoff
+#' @param sample_n_pforms
 #' @param XIC_tol
 #' @param use_IAA
 #' @param save_output
-#' @param abund_cutoff
+#' @param scoreMFAcutoff
+#' @param cosinesimcutoff
+#' @param SN_cutoff
+#' @param resPowerMS1
+#' @param isotopologue_window_multiplier
+#' @param mz_window
+#' @param return_timers
+#' @param rawrrTemp
+#' @param save_spec_object
 #'
 #' @return
 #' @export
@@ -54,8 +63,8 @@ make_every_XIC_MS1 <-
       isotopologue_window_multiplier = 6,
       mz_window = 3,
       return_timers = TRUE,
-      save_spec_object = FALSE,
-      rawrrTemp = tempdir()
+      rawrrTemp = tempdir(),
+      save_spec_object = FALSE
    ) {
 
       library(rawrr)
@@ -257,6 +266,55 @@ make_every_XIC_MS1 <-
       timer <-
          timeR::createTimer(verbose = FALSE)
 
+      ## Write params to text file ------------
+
+      params_path <-
+         fs::path(
+            saveDir,
+            'GEX_params_MS1.txt'
+         )
+
+      if (!fs::file_exists(params_path)) {
+
+         readr::write_lines(
+            glue::glue(
+               "
+               ----------------
+               {systime2}
+               ----------------
+               rawFileDir = {toString(rawFileDir)}
+               rawFileName = {toString(rawFileName)}
+               targetSeqData = {toString(targetSeqData)}
+               outputDir = {toString(outputDir)}
+               target_col_name = {rlang::as_name(target_col_name)}
+               target_sequence_col_name = {rlang::as_name(target_sequence_col_name)}
+               PTMname_col_name = {rlang::as_name(PTMname_col_name)}
+               PTMformula_col_name1 = {rlang::as_name(PTMformula_col_name1)}
+               PTMformula_col_name2 = {rlang::as_name(PTMformula_col_name2)}
+               isoNames = {toString(names(isoAbund))}
+               isoAbund = {toString(isoAbund)}
+               target_charges = {toString(target_charges)}
+               mass_range = {toString(mass_range)}
+               mz_range = {toString(mz_range)}
+               abund_cutoff = {abund_cutoff}
+               XIC_tol = {XIC_tol}
+               use_IAA = {use_IAA}
+               save_output = {save_output}
+               scoreMFAcutoff = {scoreMFAcutoff}
+               cosinesimcutoff = {cosinesimcutoff}
+               SN_cutoff = {SN_cutoff}
+               resPowerMS1 = {resPowerMS1}
+               isotopologue_window_multiplier = {isotopologue_window_multiplier}
+               mz_window = {mz_window}
+               return_timers = {return_timers}
+               abund_cutoff = {abund_cutoff}
+               rawrrTemp = {rawrrTemp}
+               "
+            ),
+            file = params_path
+         )
+
+      }
 
       # Get elemental composition -----------------------------------------------
 
@@ -541,7 +599,15 @@ make_every_XIC_MS1 <-
             )
          ) %>%
          purrr::modify_depth(2, ~dplyr::select(.x, times, intensities)) %>%
-         purrr::map(purrr::reduce, dplyr::full_join)
+         purrr::map(
+            ~suppressMessages(
+               purrr::reduce(
+                  .x,
+                  dplyr::full_join
+               )
+            )
+         )
+
 
       sumXIC2 <-
          sumXIC1 %>%
@@ -993,7 +1059,7 @@ make_every_XIC_MS1 <-
          )
 
       ## Extract highest TICs from MS made in the previous step from within a
-      ## narrow window of the all isotopologue peaks (mz_window * mz_window_scaling)
+      ## narrow window of the all isotopologue peaks
 
       message("Getting intensities for all isotopologues")
 
@@ -1502,56 +1568,6 @@ make_every_XIC_MS1 <-
          limitsize = FALSE
       )
 
-
-      # Write params to text file
-
-      params_path <-
-         fs::path(
-            saveDir,
-            'GEX_params_MS1.txt'
-         )
-
-      if (!fs::file_exists(params_path)) {
-
-         readr::write_lines(
-            glue::glue(
-               "
-               ----------------
-               {systime2}
-               ----------------
-               rawFileDir = {toString(rawFileDir)}
-               rawFileName = {toString(rawFileName)}
-               targetSeqData = {toString(targetSeqData)}
-               outputDir = {toString(outputDir)}
-               target_col_name = {rlang::as_name(target_col_name)}
-               target_sequence_col_name = {rlang::as_name(target_sequence_col_name)}
-               PTMname_col_name = {rlang::as_name(PTMname_col_name)}
-               PTMformula_col_name1 = {rlang::as_name(PTMformula_col_name1)}
-               PTMformula_col_name2 = {rlang::as_name(PTMformula_col_name2)}
-               isoNames = {toString(names(isoAbund))}
-               isoAbund = {toString(isoAbund)}
-               target_charges = {toString(target_charges)}
-               mass_range = {toString(mass_range)}
-               mz_range = {toString(mz_range)}
-               abund_cutoff = {abund_cutoff}
-               XIC_tol = {XIC_tol}
-               use_IAA = {use_IAA}
-               save_output = {save_output}
-               scoreMFAcutoff = {scoreMFAcutoff}
-               cosinesimcutoff = {cosinesimcutoff}
-               SN_cutoff = {SN_cutoff}
-               resPowerMS1 = {resPowerMS1}
-               isotopologue_window_multiplier = {isotopologue_window_multiplier}
-               mz_window = {mz_window}
-               return_timers = {return_timers}
-               abund_cutoff = {abund_cutoff}
-               rawrrTemp = {rawrrTemp}
-               "
-            ),
-            file = params_path
-         )
-
-      }
 
       message("\n\n make_every_spectrum done")
 
