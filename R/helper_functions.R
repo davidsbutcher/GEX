@@ -274,6 +274,9 @@ make_spectrum_MS2 =
       mz_theo = NULL,
       int_theo = NULL,
       sn_estimate = NULL,
+      mma = NULL,
+      mz_obs = NULL,
+      int_obs = NULL,
       theme  = NULL
    ) {
 
@@ -286,10 +289,6 @@ make_spectrum_MS2 =
       }
 
       {
-         # xmax <-
-         #    df %>%
-         #    dplyr::filter(mz == max(mz)) %>%
-         #    dplyr::pull(mz)
 
          if (is.null(xrange) == FALSE & length(xrange) > 1) {
 
@@ -305,23 +304,11 @@ make_spectrum_MS2 =
 
          }
 
-         # ymax <-
-         #    df %>%
-         #    dplyr::filter(intensity == max(intensity)) %>%
-         #    dplyr::pull(intensity) %>%
-         #    magrittr::extract(1)
-
-         # Use new method to calculate Ymax
+         # Calculate Ymax
 
          ymax <-
             max(int_theo)+(0.1*max(int_theo))
 
-
-         # if (length(xmax) == 0) {
-         #
-         #    xmax <- max_mz[[1]]
-         #
-         # }
 
          if (length(ymax) > 1) {
 
@@ -383,6 +370,36 @@ make_spectrum_MS2 =
             fill = "red",
             alpha = 0.25,
             linetype = "blank"
+         ) +
+         ggplot2::annotate(
+            "text",
+            x = mz_theo,
+            y = int_theo+(int_theo*0.05),
+            label = signif(mma, digits = 2),
+            vjust="inward",
+            color = "red",
+            size = 1.5,
+            alpha = 0.65
+         ) +
+         ggplot2::annotate(
+            "segment",
+            x = mz_obs[1:length(mz_obs)-1],
+            xend = mz_obs[2:length(mz_obs)],
+            y = int_obs[1:length(int_obs)-1]/2,
+            yend = int_obs[1:length(int_obs)-1]/2,
+            color = "blue",
+            size = 0.75,
+            alpha = 0.5
+         ) +
+         ggplot2::annotate(
+            "text",
+            x = mz_obs[1:length(mz_obs)-1]+(diff(mz_obs)/2),
+            y = (int_obs[1:length(int_obs)-1]/2)+(int_obs[1:length(int_obs)-1]*0.03),
+            label = round(diff(mz_obs)*1000),
+            vjust="inward",
+            size = 1.25,
+            alpha = 0.5,
+            color = "blue"
          ) +
          ggplot2::lims(
             x = xrange,
@@ -659,8 +676,32 @@ fix_list_length <-
 calculate_cosine_similarity <-
    function(
       a,
-      b
+      b,
+      rm_zero = TRUE
    ) {
+
+      if (rm_zero == TRUE) {
+
+         length_a_untrunc <- length(a)
+
+         # If any values are 0, remove them from calculation
+
+         b <- b[a !=0]
+         a <- a[a !=0]
+
+         # Check to see if there are any values left
+
+         if (length(a) == 0) return(0)
+
+         # Check to see if there is only one value left
+
+         if (length(a) == 1) return(0)
+
+         # Check to see if the number of zero values is less than half of the total
+
+         if (length(a) < length_a_untrunc/2) return(0)
+
+      }
 
       numerator <- sum(a * b)
 
@@ -733,13 +774,33 @@ ovlhn <- function(theo_mz, exp_mz, theo_sn, exp_sn, rp, rp_mult = 6){
 
 }
 
-ScoreMFA <- function(vexp_mz, vtheo_mz, vrp, vexp_sn, vtheo_sn, rp_mult = 6) {
+ScoreMFA <- function(vexp_mz, vtheo_mz, vrp, vexp_sn, vtheo_sn, rp_mult = 6, rm_zero = TRUE) {
+
+   # If experimental and theoretical S/N vectors are not the same length,
+   # return a score of 0
 
    if (length(vexp_sn) != length(vtheo_sn)) return(0)
+
+   if (rm_zero == TRUE) {
+
+      # If any values for experimental m/z are 0, remove it from calculation
+
+      vtheo_mz <- vtheo_mz[vexp_mz !=0]
+      vrp <- vrp[vexp_mz !=0]
+      vexp_sn <- vexp_sn[vexp_mz !=0]
+      vtheo_sn <- vtheo_sn[vexp_mz !=0]
+      vexp_mz <- vexp_mz[vexp_mz !=0]
+
+      # Check to see if there are any values left
+
+      if (length(vexp_mz) == 0) return(0)
+
+   }
 
    vsd <- vexp_mz / (rp_mult*vrp)
    ntheo <- length(vtheo_mz)
    nexp <- length(vexp_mz)
+
    if(nexp < ntheo){
       vtheo_mz <- vtheo_mz[1:nexp]
       vtheo_sn <- vtheo_sn[1:nexp]
@@ -759,6 +820,15 @@ calculate_mma_ppm <-
       theo_mass
    ) {
 
-      ((obs_mass - theo_mass)/theo_mass) * 1E6
+      if (all(obs_mass == 0) | all(theo_mass == 0)) return(rep(NA, length(obs_mass)))
+
+      mma <- ((obs_mass - theo_mass)/theo_mass) * 1E6
+
+      # mma[mma > 100 | mma < -100] <- NA
+
+      purrr::map_dbl(
+         mma,
+         ~{if (.x > 100 | .x < -100) NA else .}
+      )
 
    }

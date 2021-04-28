@@ -14,7 +14,7 @@ make_every_XIC_MS2_single(
   PTMname_col_name = "PTMname",
   PTMformula_col_name1 = "FormulaToAdd",
   PTMformula_col_name2 = "FormulaToSubtract",
-  isoAbund = c(`12C` = 0.9893, `14N` = 0.99636),
+  isoAbund = c(`12C` = 0.9889, `14N` = 0.99636),
   fragment_charges = c(1:50),
   fragment_types = c("b", "y"),
   fragment_mz_range = c(300, 2000),
@@ -22,18 +22,20 @@ make_every_XIC_MS2_single(
   abund_cutoff = 5,
   XIC_tol_MS2 = 10,
   XIC_cutoff = 1e-06,
+  use_IAA = FALSE,
+  include_PTMs = TRUE,
   scoreMFAcutoff = 0.3,
   cosinesimcutoff = 0.99,
   SN_cutoff = 10,
   resPowerMS2 = 150000,
   isotopologue_window_multiplier = 6,
   mz_window = 5,
-  use_IAA = FALSE,
-  rawrrTemp = tempdir()
+  rawrrTemp = tempdir(),
+  save_spec_object = FALSE
 )
 }
 \arguments{
-\item{abund_cutoff}{}
+\item{save_spec_object}{}
 }
 \value{
 

@@ -9,11 +9,11 @@ make_every_XIC_MS1(
   rawFileName = NULL,
   targetSeqData = NULL,
   outputDir = getwd(),
-  target_col_name = c("UNIPROTKB"),
-  target_sequence_col_name = c("ProteoformSequence"),
-  PTMname_col_name = c("PTMname"),
-  PTMformula_col_name1 = c("FormulaToAdd"),
-  PTMformula_col_name2 = c("FormulaToSubtract"),
+  target_col_name = "UNIPROTKB",
+  target_sequence_col_name = "ProteoformSequence",
+  PTMname_col_name = "PTMname",
+  PTMformula_col_name1 = "FormulaToAdd",
+  PTMformula_col_name2 = "FormulaToSubtract",
   isoAbund = c(`12C` = 0.9893, `14N` = 0.99636),
   target_charges = c(1:50),
   mass_range = c(0, 1e+05),
@@ -30,12 +30,12 @@ make_every_XIC_MS1(
   isotopologue_window_multiplier = 6,
   mz_window = 3,
   return_timers = TRUE,
-  save_spec_object = FALSE,
-  rawrrTemp = tempdir()
+  rawrrTemp = tempdir(),
+  save_spec_object = FALSE
 )
 }
 \arguments{
-\item{abund_cutoff}{}
+\item{save_spec_object}{}
 }
 \value{
 

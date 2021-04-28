@@ -17,13 +17,14 @@
 #' @param abund_cutoff
 #' @param XIC_tol_MS2
 #' @param XIC_cutoff
+#' @param use_IAA
+#' @param include_PTMs
 #' @param scoreMFAcutoff
 #' @param cosinesimcutoff
 #' @param SN_cutoff
 #' @param resPowerMS2
 #' @param isotopologue_window_multiplier
 #' @param mz_window
-#' @param use_IAA
 #' @param rawrrTemp
 #' @param save_spec_object
 #'
@@ -53,13 +54,14 @@ make_every_XIC_MS2_single <-
       abund_cutoff = 5,
       XIC_tol_MS2 = 10,
       XIC_cutoff = 0.000001,
+      use_IAA = FALSE,
+      include_PTMs = TRUE,
       scoreMFAcutoff = 0.3,
       cosinesimcutoff = 0.99,
       SN_cutoff = 10,
       resPowerMS2 = 150000,
       isotopologue_window_multiplier = 6,
       mz_window = 5,
-      use_IAA = FALSE,
       rawrrTemp = tempdir(),
       save_spec_object = FALSE
    ) {
@@ -235,6 +237,14 @@ make_every_XIC_MS2_single <-
             MonoisoMass =
                Peptides::mw(!!target_sequence_col_name_sym, monoisotopic = TRUE)
          )
+      # tidyr::separate(
+      #    !!PTMname_col_name,
+      #    c("PTM", "PTMpos"),
+      #    sep = "@",
+      #    remove = FALSE
+      # ) %>%
+      # dplyr::mutate(PTMpos = as.numeric(PTMpos))
+
 
       target_seqs <-
          target_seqs_df %>%
@@ -243,6 +253,53 @@ make_every_XIC_MS2_single <-
          ) %>%
          tibble::deframe() %>%
          as.list()
+
+      if (include_PTMs == TRUE) {
+
+         target_PTM_split <-
+            as.list(target_seqs_df$PTMname) %>%
+            purrr::map(
+               ~stringr::str_split(.x, "; ")
+            )
+
+         target_PTM <-
+            target_PTM_split %>%
+            purrr::map(
+               ~stringr::str_extract(.x[[1]], "[^@]+")
+            )
+
+         target_PTM_pos <-
+            target_PTM_split %>%
+            purrr::map(
+               ~stringr::str_extract(.x[[1]], "(?<=@).*") %>%
+                  as.numeric()
+            )
+
+         target_PTM_chemform <-
+            target_seqs_df %>%
+            dplyr::pull("FormulaToAdd") %>%
+            as.list() %>%
+            purrr::map(
+               ~stringr::str_split(.x, "; ")[[1]]
+            )
+
+         rm(target_PTM_split)
+
+      }
+
+      # target_PTM <-
+      #    target_seqs_df %>%
+      #    dplyr::pull("PTM")
+      #
+      # target_PTM_pos <-
+      #    target_seqs_df %>%
+      #    dplyr::pull("PTMpos")
+      #
+      # target_PTM_chemform <-
+      #    target_seqs_df %>%
+      #    dplyr::pull("FormulaToAdd") %>%
+      #    tidyr::replace_na("C0")
+
 
       # Create save directory ---------------------------------------------------
 
@@ -354,6 +411,7 @@ make_every_XIC_MS2_single <-
                isotopologue_window_multiplier = {isotopologue_window_multiplier}
                mz_window = {mz_window}
                use_IAA = {use_IAA}
+               include_PTMs = {include_PTMs}
                abund_cutoff = {abund_cutoff}
                "
             ),
@@ -502,14 +560,71 @@ make_every_XIC_MS2_single <-
                )
             )
 
-         # Prepare fragments data for combination with iso_dist_MS2 later
+         # Add PTM chemical formulas to appropriate fragments
 
-         # fragments3_old <-
-         #    fragments2 %>%
-         #    purrr::map(
-         #       ~dplyr::group_by(.x, type, pos, mz) %>%
-         #          dplyr::group_split()
-         #    )
+         if (include_PTMs == TRUE) {
+
+            fragments2[[1]] <-
+               fragments2[[1]] %>%
+               dplyr::mutate(
+                  chemform_noPTM = chemform,
+                  PTM = "",
+                  PTM_chemform = ""
+               )
+
+            for (j in seq_along(target_PTM[[i]])) {
+
+               fragments2_temp <-
+                  fragments2[[1]] %>%
+                  dplyr::mutate(
+                     PTM_chemform_temp =
+                        dplyr::case_when(
+                           type == "b" & pos >= target_PTM_pos[[i]][j] ~ target_PTM_chemform[[i]][j],
+                           type == "y" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ target_PTM_chemform[[i]][j],
+                           TRUE ~ "C0"
+                        ),
+                     PTM =
+                        dplyr::case_when(
+                           type == "b" & pos >= target_PTM_pos[[i]][j] ~ paste0(PTM, target_PTM[[i]][j], sep = "; "),
+                           type == "y" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ paste0(PTM, target_PTM[[i]][j], sep = "; "),
+                           TRUE ~ ""
+                        ),
+                     PTM_chemform =
+                        dplyr::case_when(
+                           type == "b" & pos >= target_PTM_pos[[i]][j] ~ paste0(PTM_chemform, target_PTM_chemform[[i]][j], sep = "; "),
+                           type == "y" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ paste0(PTM_chemform, target_PTM_chemform[[i]][j], sep = "; "),
+                           TRUE ~ ""
+                        )
+                  )
+
+
+               new_chemform <-
+                  purrr::map2_chr(
+                     fragments2_temp$chemform,
+                     fragments2_temp$PTM_chemform_temp,
+                     ~enviPat::mergeform(.x, .y)
+                  )
+
+               fragments2[[1]] <-
+                  fragments2_temp %>%
+                  dplyr::mutate(
+                     chemform = new_chemform,
+                     ion_chemform = paste(ion, chemform, sep = "_")
+                  )
+
+            }
+
+            fragments2[[1]] <-
+               fragments2[[1]] %>%
+               dplyr::mutate(
+                  ion_chemform = paste(ion, chemform, sep = "_")
+               ) %>%
+               dplyr::select(-PTM_chemform_temp)
+
+         }
+
+
+         # Prepare fragments data for combination with iso_dist_MS2 later
 
          fragments3 <-
             fragments2 %>%
@@ -832,8 +947,15 @@ make_every_XIC_MS2_single <-
                "IsoDist_MS2"
             )
 
+         saveDirFragLib <-
+            fs::path(
+               saveDir,
+               "fragment_library_MS2"
+            )
+
          if (fs::dir_exists(saveDirXIC) == FALSE) fs::dir_create(saveDirXIC)
          if (fs::dir_exists(saveDirIsoDist) == FALSE) fs::dir_create(saveDirIsoDist)
+         if (fs::dir_exists(saveDirFragLib) == FALSE) fs::dir_create(saveDirFragLib)
 
          ## Save theo iso distributions -----
 
@@ -846,6 +968,19 @@ make_every_XIC_MS2_single <-
                      stringr::str_trunc(
                         names(target_seqs)[[i]], 90, "right", ellipsis = ""),
                      '_isodist_MS2.xlsx'
+                  )
+               )
+         )
+
+         writexl::write_xlsx(
+            fragments2,
+            path =
+               fs::path(
+                  saveDirFragLib,
+                  paste0(
+                     stringr::str_trunc(
+                        names(target_seqs)[[i]], 90, "right", ellipsis = ""),
+                     '_fragment_library_MS2.xlsx'
                   )
                )
          )
@@ -1025,6 +1160,23 @@ make_every_XIC_MS2_single <-
                         }
                   )
                )
+            )
+
+         # Calculate mean noise for all MS2 scans
+
+         noise_obs_MS2_mean <-
+            noise_obs_MS2 %>%
+            unlist() %>%
+            .[. != 0] %>%
+            mean
+
+         # Replace all zeros with the mean noise
+
+         noise_obs_MS2 <-
+            purrr::map_depth(
+               noise_obs_MS2,
+               3,
+               ~{if (.x == 0) noise_obs_MS2_mean else .}
             )
 
          # Make list of charges in fragments_maxTIC and filter iso_dist_cluster_trunc
@@ -1234,8 +1386,6 @@ make_every_XIC_MS2_single <-
                )
             )
 
-
-
          # Attempt to determine RP for each isotopologue peak
 
          rp_obs_MS2 <-
@@ -1331,6 +1481,9 @@ make_every_XIC_MS2_single <-
                )
             )
 
+
+         ## Calculate spectral scores -----------------------------------------------
+
          # Calculate ScoreMFA
 
          score_MFA_MS2 <-
@@ -1364,7 +1517,8 @@ make_every_XIC_MS2_single <-
                         ..3,
                         ..4,
                         ..5,
-                        rp_mult = 2
+                        rp_mult = 2,
+                        rm_zero = TRUE
                      ) %>%
                         {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
                   )
@@ -1391,14 +1545,46 @@ make_every_XIC_MS2_single <-
                      ),
                      ~calculate_cosine_similarity(
                         ..1,
-                        ..2
+                        ..2,
+                        rm_zero = TRUE
                      ) %>%
                         {if (is.nan(.) | is.null(.) | length(.) == 0) 0 else .}
                   )
                )
             )
 
+         # Calculate MMA for every peak
+
+         MMA_MS2 <-
+            purrr::pmap(
+               list(
+                  mz_obs_MS2,
+                  mz_theo_MS2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1,
+                     ..2
+                  ),
+                  ~purrr::pmap(
+                     list(
+                        ..1,
+                        ..2
+                     ),
+                     ~calculate_mma_ppm(
+                        ..1,
+                        ..2
+                     )
+                        # {if (is.nan(.) | is.null(.) | length(.) == 0) NA else .}
+                  )
+               )
+            )
+
          timer$stop("6. Process MS data")
+
+
+         # Plot MS -----------------------------------------------------------------
+
 
          # Prepare data for plotting
 
@@ -1449,7 +1635,10 @@ make_every_XIC_MS2_single <-
                   mz_theo_MS2,
                   intensity_theo_MS2_scaled,
                   cosine_sim_MS2,
-                  SN_estimate_obs_MS2
+                  SN_estimate_obs_MS2,
+                  mz_obs_MS2,
+                  intensity_obs_MS2,
+                  MMA_MS2
                ),
                ~purrr::pmap(
                   list(
@@ -1464,7 +1653,10 @@ make_every_XIC_MS2_single <-
                      ..9,
                      ..10,
                      ..11,
-                     ..12
+                     ..12,
+                     ..13,
+                     ..14,
+                     ..15
                   ),
                   ~purrr::pmap(
                      list(
@@ -1479,7 +1671,10 @@ make_every_XIC_MS2_single <-
                         ..9,
                         ..10,
                         ..11,
-                        ..12
+                        ..12,
+                        ..13,
+                        ..14,
+                        ..15
                      ),
                      ~{
                         if (..8 > scoreMFAcutoff & ..11 > cosinesimcutoff & max(..12) > SN_cutoff) {
@@ -1497,6 +1692,9 @@ make_every_XIC_MS2_single <-
                               mz_theo = ..9,
                               int_theo = ..10,
                               sn_estimate = ..12,
+                              mma = ..15,
+                              mz_obs = ..13,
+                              int_obs = ..14,
                               theme = MStheme01
                            )
                         } else {
@@ -1580,6 +1778,9 @@ make_every_XIC_MS2_single <-
                dplyr::bind_rows
             ) %>%
             dplyr::bind_rows()
+
+
+         # Save MS results ---------------------------------------------------------
 
          # Save fragments dataframe for this sequence to saveDirFrag
 

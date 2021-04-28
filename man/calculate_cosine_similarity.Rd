@@ -4,7 +4,7 @@
 \alias{calculate_cosine_similarity}
 \title{calculate_cosine_similarity}
 \usage{
-calculate_cosine_similarity(a, b)
+calculate_cosine_similarity(a, b, rm_zero = TRUE)
 }
 \arguments{
 \item{b}{}
