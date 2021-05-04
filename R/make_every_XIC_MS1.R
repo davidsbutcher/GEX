@@ -1245,31 +1245,6 @@ make_every_XIC_MS1 <-
             )
          )
 
-
-
-      ## Calculate cosine similarities
-
-      message("Calculating cosine similarities")
-
-      cosine_sims <-
-         purrr::map2(
-            intensity_obs_MS1,
-            intensity_theo_MS1,
-            ~purrr::map2(
-               .x,
-               .y,
-               ~calculate_cosine_similarity(
-                  .x,
-                  .y
-               ) %>%
-                  {if (length(.) == 0 | is.nan(.) | is.null(.)) 0 else .}
-            )
-         ) %>%
-         purrr::map2(
-            standard_lengths,
-            ~fix_list_length(.x, .y)
-         )
-
       ## Calculate S/N estimates
 
       SN_estimate_obs_MS1 <-
@@ -1321,7 +1296,7 @@ make_every_XIC_MS1 <-
 
       ## Calculate Mel's ScoreMFA
 
-      score_MFA <-
+      score_MFA_MS1 <-
          purrr::pmap(
             list(
                mz_obs_MS1,
@@ -1354,9 +1329,59 @@ make_every_XIC_MS1 <-
             ~fix_list_length(.x, .y)
          )
 
-      ## Save score_MFA data for further analysis, TESTING PURPOSES ONLY
+      ## Calculate cosine similarities
 
-      # saveRDS(score_MFA, paste0(saveDir, "/score_MFA.rds"))
+      message("Calculating cosine similarities")
+
+      cosine_sim_MS1 <-
+         purrr::map2(
+            intensity_obs_MS1,
+            intensity_theo_MS1,
+            ~purrr::map2(
+               .x,
+               .y,
+               ~calculate_cosine_similarity(
+                  .x,
+                  .y
+               ) %>%
+                  {if (length(.) == 0 | is.nan(.) | is.null(.)) 0 else .}
+            )
+         ) %>%
+         purrr::map2(
+            standard_lengths,
+            ~fix_list_length(.x, .y)
+         )
+
+      # Calculate MMA for every peak
+
+      MMA_MS1 <-
+         purrr::pmap(
+            list(
+               mz_obs_MS1,
+               mz_theo_MS1
+            ),
+            ~purrr::pmap(
+               list(
+                  ..1,
+                  ..2
+               ),
+               ~purrr::pmap(
+                  list(
+                     ..1,
+                     ..2
+                  ),
+                  ~calculate_mma_ppm(
+                     ..1,
+                     ..2
+                  )
+                  # {if (is.nan(.) | is.null(.) | length(.) == 0) NA else .}
+               )
+            )
+         )
+
+      ## Save score_MFA_MS1 data for further analysis, TESTING PURPOSES ONLY
+
+      # saveRDS(score_MFA_MS1, paste0(saveDir, "/score_MFA_MS1.rds"))
       #
       # saveRDS(mz_obs_MS1, paste0(saveDir, "/mz_obs_MS1.rds"))
       # saveRDS(mz_theo_MS1, paste0(saveDir, "/mz_theo_MS1.rds"))
@@ -1377,8 +1402,8 @@ make_every_XIC_MS1 <-
                PTM_names_list,
                results_chargestateTICs,
                mz_max_abund_noise,
-               cosine_sims,
-               score_MFA
+               cosine_sim_MS1,
+               score_MFA_MS1
             ),
             ~purrr::pmap(
                list(
@@ -1450,10 +1475,14 @@ make_every_XIC_MS1 <-
                PTM_names_list,
                iso_dist_vlines2,
                results_chargestateTICs,
-               cosine_sims,
+               cosine_sim_MS1,
                mz_theo_MS1,
                intensity_theo_MS1_scaled,
-               score_MFA
+               mz_obs_MS1,
+               intensity_obs_MS1,
+               MMA_MS1,
+               score_MFA_MS1,
+               SN_estimate_obs_MS1
             ),
             ~purrr::pmap(
                list(
@@ -1467,10 +1496,14 @@ make_every_XIC_MS1 <-
                   ..8,
                   ..9,
                   ..10,
-                  ..11
+                  ..11,
+                  ..12,
+                  ..13,
+                  ..14,
+                  ..15
                ),
                ~{
-                  if (..11 > scoreMFAcutoff & ..8 > cosinesimcutoff & mean(dplyr::pull(..1, noise)) > SN_cutoff) {
+                  if (..14 > scoreMFAcutoff & ..8 > cosinesimcutoff & max(..15) > SN_cutoff) {
                      make_spectrum_top1(
                         df = ..1,
                         x = mz,
@@ -1483,12 +1516,15 @@ make_every_XIC_MS1 <-
                         ..5,
                         vlines = ..6,
                         chargestateTIC = ..7,
-                        cosine_sims = ..8,
+                        cosine_sim = ..8,
                         mz_theo = ..9,
-                        intensity_theo = ..10,
+                        int_theo = ..10,
+                        mz_obs = ..11,
+                        int_obs = ..12,
+                        mma = ..13,
                         isotopologue_window = isotopologue_window_multiplier*(..9/resPowerMS1),
                         theme = MStheme01,
-                        score_mfa = ..11
+                        score_mfa = ..14
                      )
                   }
                }

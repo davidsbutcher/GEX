@@ -115,7 +115,10 @@ make_spectrum_top1 =
       cosine_sims = NULL,
       score_mfa = NULL,
       mz_theo = NULL,
-      intensity_theo = NULL,
+      int_theo = NULL,
+      mz_obs = NULL,
+      int_obs = NULL,
+      mma = NULL,
       isotopologue_window = NULL,
       theme  = NULL
    ) {
@@ -142,15 +145,15 @@ make_spectrum_top1 =
 
          }
 
-         ymax <-
-            df %>%
-            dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
-            dplyr::filter({{y}} == max({{y}})) %>%
-            dplyr::pull({{y}}) %>%
-            magrittr::extract(1)
-
          # ymax <-
-         #    chargestateTIC
+         #    df %>%
+         #    dplyr::filter({{x}} >= xrange[[1]] & {{x}} <= xrange[[2]]) %>%
+         #    dplyr::filter({{y}} == max({{y}})) %>%
+         #    dplyr::pull({{y}}) %>%
+         #    magrittr::extract(1)
+
+         ymax <-
+            max(int_obs) + 0.05*max(int_obs)
 
          if (length(ymax) > 1) {
 
@@ -184,7 +187,7 @@ make_spectrum_top1 =
       }
 
       theo_points <-
-         intensity_theo %>%
+         int_theo %>%
          purrr::set_names(mz_theo) %>%
          tibble::enframe(name = "mz", value = "intensity") %>%
          dplyr::mutate(mz = as.double(mz))
@@ -208,9 +211,9 @@ make_spectrum_top1 =
             xmin = mean(xrange)-(isotopologue_window/2),
             xmax = mean(xrange)+(isotopologue_window/2),
             ymin = 0,
-            ymax = ymax,
-            fill = "blue",
-            alpha = 0.10,
+            ymax = max(theo_points$intensity),
+            fill = "yellow",
+            alpha = 0.05,
             linetype = "blank"
          ) +
          ggplot2::annotate(
@@ -222,6 +225,36 @@ make_spectrum_top1 =
             fill = "red",
             alpha = 0.25,
             linetype = "blank"
+         ) +
+         ggplot2::annotate(
+            "text",
+            x = mz_theo,
+            y = int_theo+(int_theo*0.05),
+            label = signif(as.numeric(mma), digits = 2),
+            vjust="inward",
+            color = "red",
+            size = 1.5,
+            alpha = 0.65
+         ) +
+         ggplot2::annotate(
+            "segment",
+            x = mz_obs[1:length(mz_obs)-1],
+            xend = mz_obs[2:length(mz_obs)],
+            y = int_obs[1:length(int_obs)-1]/2,
+            yend = int_obs[1:length(int_obs)-1]/2,
+            color = "blue",
+            size = 0.75,
+            alpha = 0.5
+         ) +
+         ggplot2::annotate(
+            "text",
+            x = mz_obs[1:length(mz_obs)-1]+(diff(mz_obs)/2),
+            y = (int_obs[1:length(int_obs)-1]/2)+(int_obs[1:length(int_obs)-1]*0.03),
+            label = round(diff(mz_obs)*1000),
+            vjust="inward",
+            size = 1.25,
+            alpha = 0.5,
+            color = "blue"
          ) +
          ggplot2::geom_hline(
             ggplot2::aes(
