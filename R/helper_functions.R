@@ -34,7 +34,7 @@ make_XIC_plot = function(df, x, y, PTMname, seq_name) {
             x = times,
             y = int_sum,
             label = glue::glue(
-               "Max TIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}\n PTM: {stringr::str_wrap(PTMname, width = 10)}"),
+               "Max TIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}\n PTM: {stringr::str_wrap(PTMname, width = 30)}"),
             alpha = 0.5,
             size = 2
          ),
@@ -50,7 +50,9 @@ make_XIC_plot = function(df, x, y, PTMname, seq_name) {
       ggplot2::guides(
          alpha = "none",
          size = "none"
-      )
+      ) +
+      ggplot2::scale_size_identity()
+
 
 }
 
@@ -76,7 +78,7 @@ make_XIC_plot_MS2 =
                x = {{x}},
                y = {{y}},
                label = glue::glue(
-                  "{ion_name}\nCharge {stringr::str_wrap(toString(paste0(ion_charge,'+')), width = 40)}\nMaxTIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}"
+                  "{ion_name}\nCharge {stringr::str_wrap(toString(paste0(ion_charge,'+')), width = 40)}\nMax TIC: {format(int_sum, scientific = TRUE, nsmall = 4, digits = 4)}\n RT@Max: {format(times, scientific = FALSE, nsmall = 4, digits = 3)}"
                ),
                alpha = 0.35,
                size = 2
@@ -268,7 +270,7 @@ make_spectrum_top1 =
             "text",
             x = xrange[[2]],
             y = ymax,
-            label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n Theo. Max TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\nPTM: {PTMname}\n ScoreMFA: {round((score_mfa), digits = 3)}"),
+            label = glue::glue("{accession}\n Scan #{scan_cap}\n Charge +{charge}\n THAI TIC: {format(chargestateTIC, scientific = TRUE, nsmall = 3, digits = 3)}\n Est. S/N: {round((chargestateTIC/mean_noise), digits = 0)}\n Cos. Sim.: {round((cosine_sims), digits = 3)}\n ScoreMFA: {round((score_mfa), digits = 3)}\nPTM: {stringr::str_wrap(PTMname, width = 30)}"),
             vjust="inward",
             hjust="inward",
             size = 2,
@@ -310,6 +312,7 @@ make_spectrum_MS2 =
       mma = NULL,
       mz_obs = NULL,
       int_obs = NULL,
+      noise = NULL,
       theme  = NULL
    ) {
 
@@ -379,7 +382,7 @@ make_spectrum_MS2 =
             "text",
             x = xmax,
             y = ymax,
-            label = glue::glue("{name}\n{ion}\nCharge {charge}+\nScan #{scan}\nScoreMFA: {signif(ScoreMFA, digits = 3)}\nCosine Sim: {signif(cosine_sim, digits = 3)}\nS/N estimate: {signif(max(sn_estimate), digits = 2)}"),
+            label = glue::glue("{name}\n{ion}\nScan #{scan}\nCharge {charge}+\nS/N estimate: {signif(max(sn_estimate), digits = 2)}\nCosine Sim: {signif(cosine_sim, digits = 3)}\nScoreMFA: {signif(ScoreMFA, digits = 3)}"),
             vjust="inward",
             hjust="inward",
             size = 2,
@@ -432,6 +435,14 @@ make_spectrum_MS2 =
             vjust="inward",
             size = 1.25,
             alpha = 0.5,
+            color = "blue"
+         ) +
+         ggplot2::geom_hline(
+            ggplot2::aes(
+               yintercept = noise,
+               alpha = 0.5,
+               size = 0.25
+            ),
             color = "blue"
          ) +
          ggplot2::lims(
