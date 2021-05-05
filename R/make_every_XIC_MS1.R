@@ -17,6 +17,7 @@
 #' @param sample_n_pforms
 #' @param XIC_tol
 #' @param use_IAA
+#' @param include_PTMs
 #' @param save_output
 #' @param scoreMFAcutoff
 #' @param cosinesimcutoff
@@ -55,6 +56,7 @@ make_every_XIC_MS1 <-
       sample_n_pforms = NULL,
       XIC_tol = 2,
       use_IAA = FALSE,
+      include_PTMs = TRUE,
       save_output = TRUE,
       scoreMFAcutoff = 0.3,
       cosinesimcutoff = 0.8,
@@ -299,6 +301,7 @@ make_every_XIC_MS1 <-
                abund_cutoff = {abund_cutoff}
                XIC_tol = {XIC_tol}
                use_IAA = {use_IAA}
+               include_PTMs = {include_PTMs}
                save_output = {save_output}
                scoreMFAcutoff = {scoreMFAcutoff}
                cosinesimcutoff = {cosinesimcutoff}
@@ -344,60 +347,93 @@ make_every_XIC_MS1 <-
             collapse = ""
          )
 
-      ## Extract PTM names and make list for later use
+      if (include_PTMs == FALSE) {
 
-      PTM_names_list <-
-         target_seqs_df %>%
-         dplyr::select(!!target_col_name, !!PTMname_col_name) %>%
-         tibble::deframe() %>%
-         as.list()
+         PTM_names_list <-
+            rep("None", length(target_seqs)) %>%
+            as.list()
 
-      PTM_names_list[is.na(PTM_names_list) == TRUE] <- "None"
+      } else if (include_PTMs == TRUE) {
 
-      ## Make list of PTM formulas to ADD
+         ## Extract PTM names and make list for later use
 
-      PTM_form_to_add <-
-         target_seqs_df %>%
-         dplyr::pull(!!PTMformula_col_name1) %>%
-         as.list()
+         PTM_names_list <-
+            target_seqs_df %>%
+            dplyr::select(!!target_col_name, !!PTMname_col_name) %>%
+            tibble::deframe() %>%
+            as.list()
 
-      PTM_form_to_add[is.na(PTM_form_to_add) == TRUE] <- "C0"
+         PTM_names_list[is.na(PTM_names_list) == TRUE] <- "None"
 
-      PTM_form_to_add <-
-         purrr::map(
-            PTM_form_to_add,
-            ~enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = .x) %>%
-               dplyr::pull(new_formula)
-         )
+         ## Make list of PTM formulas to ADD
 
-      ## Make list of PTM formulas to SUBTRACT
+         PTM_form_to_add <-
+            target_seqs_df %>%
+            dplyr::pull(!!PTMformula_col_name1) %>%
+            as.list()
 
-      PTM_form_to_sub <-
-         target_seqs_df %>%
-         dplyr::pull(!!PTMformula_col_name2) %>%
-         as.list()
+         PTM_form_to_add[is.na(PTM_form_to_add) == TRUE] <- "C0"
 
-      PTM_form_to_sub[is.na(PTM_form_to_sub) == TRUE] <- "C0"
 
-      PTM_form_to_sub <-
-         purrr::map(
-            PTM_form_to_sub,
-            ~enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = .x) %>%
-               dplyr::pull(new_formula)
-         )
+         for (i in seq_along(PTM_form_to_add)) {
 
-      ## Add and subtract PTM formulas as needed
+            PTM_form_to_add[[i]] <-
+               stringr::str_split(PTM_form_to_add[[i]], ";") %>%
+               .[[1]] %>%
+               stringr::str_trim() %>%
+               purrr::reduce(enviPat::mergeform)
 
-      chemform <-
-         purrr::map2(
-            chemform,
-            PTM_form_to_add,
-            ~enviPat::mergeform(.x, .y)
-         ) %>%
-         purrr::map2(
-            PTM_form_to_sub,
-            ~enviPat::subform(.x, .y)
-         )
+         }
+
+
+         PTM_form_to_add <-
+            purrr::map(
+               PTM_form_to_add,
+               ~enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = .x) %>%
+                  dplyr::pull(new_formula)
+            )
+
+         ## Make list of PTM formulas to SUBTRACT
+
+         PTM_form_to_sub <-
+            target_seqs_df %>%
+            dplyr::pull(!!PTMformula_col_name2) %>%
+            as.list()
+
+         PTM_form_to_sub[is.na(PTM_form_to_sub) == TRUE] <- "C0"
+
+
+         for (i in seq_along(PTM_form_to_sub)) {
+
+            PTM_form_to_sub[[i]] <-
+               stringr::str_split(PTM_form_to_sub[[i]], ";") %>%
+               .[[1]] %>%
+               stringr::str_trim() %>%
+               purrr::reduce(enviPat::mergeform)
+
+         }
+
+         PTM_form_to_sub <-
+            purrr::map(
+               PTM_form_to_sub,
+               ~enviPat::check_chemform(isotopes = isotopes_to_use, chemforms = .x) %>%
+                  dplyr::pull(new_formula)
+            )
+
+         ## Add and subtract PTM formulas as needed
+
+         chemform <-
+            purrr::map2(
+               chemform,
+               PTM_form_to_add,
+               ~enviPat::mergeform(.x, .y)
+            ) %>%
+            purrr::map2(
+               PTM_form_to_sub,
+               ~enviPat::subform(.x, .y)
+            )
+
+      }
 
       # Add one H per positive charge
 
@@ -1035,7 +1071,7 @@ make_every_XIC_MS1 <-
 
       message("Getting intensity for theoretical highest abundance isotopologue")
 
-      results_chargestateTICs <-
+      intensity_THAI_MS1 <-
          purrr::map2(
             spectra_highestTIC %>% purrr::map(list),
             mz_max_abund,
@@ -1400,7 +1436,7 @@ make_every_XIC_MS1 <-
                mz_max_abund,
                mz_max_abund_charge,
                PTM_names_list,
-               results_chargestateTICs,
+               intensity_THAI_MS1,
                mz_max_abund_noise,
                cosine_sim_MS1,
                score_MFA_MS1
@@ -1474,7 +1510,7 @@ make_every_XIC_MS1 <-
                mz_max_abund_charge,
                PTM_names_list,
                iso_dist_vlines2,
-               results_chargestateTICs,
+               intensity_THAI_MS1,
                cosine_sim_MS1,
                mz_theo_MS1,
                intensity_theo_MS1_scaled,
