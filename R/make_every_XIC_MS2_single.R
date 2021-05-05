@@ -257,21 +257,28 @@ make_every_XIC_MS2_single <-
       if (include_PTMs == TRUE) {
 
          target_PTM_split <-
-            as.list(target_seqs_df$PTMname) %>%
+            as.list(
+               dplyr::pull(
+                  target_seqs_df,
+                  !!PTMname_col_name
+               )
+            ) %>%
             purrr::map(
-               ~stringr::str_split(.x, "; ")
+               ~stringr::str_split(.x, ";") %>%
+                  .[[1]] %>%
+                  stringr::str_trim()
             )
 
          target_PTM <-
             target_PTM_split %>%
             purrr::map(
-               ~stringr::str_extract(.x[[1]], "[^@]+")
+               ~stringr::str_extract(.x, "[^@]+")
             )
 
          target_PTM_pos <-
             target_PTM_split %>%
             purrr::map(
-               ~stringr::str_extract(.x[[1]], "(?<=@).*") %>%
+               ~stringr::str_extract(.x, "(?<=@).*") %>%
                   as.numeric()
             )
 
@@ -280,7 +287,9 @@ make_every_XIC_MS2_single <-
             dplyr::pull("FormulaToAdd") %>%
             as.list() %>%
             purrr::map(
-               ~stringr::str_split(.x, "; ")[[1]]
+               ~stringr::str_split(.x, ";") %>%
+                  .[[1]] %>%
+                  stringr::str_trim()
             )
 
          rm(target_PTM_split)
@@ -1575,7 +1584,7 @@ make_every_XIC_MS2_single <-
                         ..1,
                         ..2
                      )
-                        # {if (is.nan(.) | is.null(.) | length(.) == 0) NA else .}
+                     # {if (is.nan(.) | is.null(.) | length(.) == 0) NA else .}
                   )
                )
             )
@@ -1638,7 +1647,8 @@ make_every_XIC_MS2_single <-
                   SN_estimate_obs_MS2,
                   mz_obs_MS2,
                   intensity_obs_MS2,
-                  MMA_MS2
+                  MMA_MS2,
+                  noise_obs_MS2
                ),
                ~purrr::pmap(
                   list(
@@ -1656,7 +1666,8 @@ make_every_XIC_MS2_single <-
                      ..12,
                      ..13,
                      ..14,
-                     ..15
+                     ..15,
+                     ..16
                   ),
                   ~purrr::pmap(
                      list(
@@ -1674,7 +1685,8 @@ make_every_XIC_MS2_single <-
                         ..12,
                         ..13,
                         ..14,
-                        ..15
+                        ..15,
+                        ..16
                      ),
                      ~{
                         if (..8 > scoreMFAcutoff & ..11 > cosinesimcutoff & max(..12) > SN_cutoff) {
@@ -1695,6 +1707,7 @@ make_every_XIC_MS2_single <-
                               mma = ..15,
                               mz_obs = ..13,
                               int_obs = ..14,
+                              noise = ..16,
                               theme = MStheme01
                            )
                         } else {
