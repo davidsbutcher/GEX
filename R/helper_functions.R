@@ -712,10 +712,6 @@ fix_list_length <-
 #' Calculate cosine similarity of two vectors. Function adapted from the
 #' MicroRaman package.
 #'
-#' @param a
-#' @param b
-#'
-#' @importFrom magrittr %>%
 
 calculate_cosine_similarity <-
    function(

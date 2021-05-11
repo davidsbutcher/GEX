@@ -6,9 +6,6 @@
 \usage{
 calculate_cosine_similarity(a, b, rm_zero = TRUE)
 }
-\arguments{
-\item{b}{}
-}
 \description{
 Calculate cosine similarity of two vectors. Function adapted from the
 MicroRaman package.
