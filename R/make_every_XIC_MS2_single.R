@@ -798,7 +798,7 @@ make_every_XIC_MS2_single <-
          max_TIC_MS2 <-
             rawrr::readChromatogram(
                rawfile = rawFile,
-               filter = "ms2",
+               filter = ms_filter,
                type = "tic",
                tol = XIC_tol_MS2
             ) %>%
@@ -816,7 +816,7 @@ make_every_XIC_MS2_single <-
                   ~rawrr::readChromatogram(
                      rawfile = rawFile,
                      mass = .x$`m/z`,
-                     filter = "ms2",
+                     filter = ms_filter,
                      type = "xic",
                      tol = XIC_tol_MS2
                   )
