@@ -1,39 +1,77 @@
 #' make_every_XIC_MS2_single
 #'
-#' @param rawFileDir
-#' @param rawFileName
-#' @param targetSeqData
-#' @param outputDir
-#' @param target_col_name
-#' @param target_sequence_col_name
-#' @param PTMname_col_name
-#' @param PTMformula_col_name1
-#' @param PTMformula_col_name2
-#' @param isoAbund
-#' @param fragment_charges
-#' @param fragment_types
-#' @param fragment_mz_range
-#' @param fragment_pos_cutoff
-#' @param abund_cutoff
-#' @param XIC_tol_MS2
-#' @param XIC_cutoff
-#' @param use_IAA
-#' @param include_PTMs
-#' @param scoreMFAcutoff
-#' @param cosinesimcutoff
-#' @param SN_cutoff
-#' @param resPowerMS2
-#' @param isotopologue_window_multiplier
-#' @param mz_window
-#' @param rawrrTemp
-#' @param save_spec_object
+#' @param rawFileDir Directory containing target raw file.
+#' @param rawFileName Target raw file name.
+#' @param targetSeqData Path to target sequences data. Should be a .csv file.
+#' @param outputDir Path to output directory.
+#' @param target_col_name Name of column in target sequences data which contains
+#' unique identifiers for proteoforms to be identified. Defaults to "UNIPROTKB".
+#' @param target_sequence_col_name Name of column in target sequences data which
+#' contains the amino acid sequences of target proteoforms.Defaults to
+#' "ProteoformSequence".
+#' @param PTMname_col_name Name of column in target sequences data which
+#' contains names and positions of PTMs. Defaults to "PTMname".
+#' @param PTMformula_col_name1 Name of column in target sequences data which
+#' contains chemical formulas for PTMs to be added to the formula of the bare
+#' proteoform sequence. Defaults to "FormulaToAdd".
+#' @param PTMformula_col_name2 Name of column in target sequences data which
+#' contains chemical formulas for PTMs to be subtracted from the formula of the
+#' bare proteoform sequence.
+#' @param isoAbund Named numeric vector specifying abundances of isotopes to be
+#' used for generating theoretical isotopic distributions. See data(isotopes,
+#' package = 'enviPat') for isotope names.
+#' @param fragment_charges Numeric vector. Range of charges used to
+#' generate fragment libraries. Argument passed to MSnbase::calculateFragments.
+#' @param fragment_types Character vector. Types of fragments to be included in
+#' generation of fragment libraries. Argument passed to MSnbase::calculateFragments.
+#' @param fragment_mz_range Numeric vector, length 2. Range of m/z values to use
+#' for filtering fragment libraries. Fragments whose theoretical m/z values are
+#' outside of this range will be removed before analysis.
+#' @param fragment_pos_cutoff Numeric vector, length 2. Range of fragment positions,
+#' or lengths, to be used for generating fragment libraries.
+#' @param abund_cutoff Numeric vector, length 1. Controls the minimum relative
+#' abundance (compared to the theoretical highest abundance isotopologue) a
+#' fragment isotopologue peak must have to be included in the search. Defaults to 5.
+#' @param XIC_tol_MS2 Numeric vector, length 1. Tolerance (in ppm) used to generate
+#' extracted ion chromatograms from theoretical isotopic distributions. Defaults to 5.
+#' @param XIC_cutoff Numeric vector, length 1.
+#' @param use_IAA Boolean value. Controls whether fragments should be
+#' considered to be alkylated with iodoacetamide at all cysteine residues. Argument
+#' is passed to OrgMassSpecR::ConvertPeptide.
+#' @param include_PTMs Boolean value. Controls whether PTM chemical formulas are
+#' added when generating theoretical isotopic distributions for fragments. If
+#' false, ONLY the bare fragment sequence is considered. Defaults to TRUE.
+#' @param scoreMFAcutoff Numeric vector, length 1. Minimum value of ScoreMFA for
+#' comparison of theoretical and observed isotopic distributions to be considered
+#' valid.
+#' @param cosinesimcutoff Numeric vector, length 1. Minimum value of cosine
+#' similarity (AKA dot product) for comparison of theoretical and observed isotopic
+#' distributions to be considered valid.
+#' @param SN_cutoff Numeric vector, length 1. Minimum allowed value for the estimated
+#' S/N of the observed isotopologue peak corresponding to the theoretical highest
+#' abundance isotopologue.
+#' @param resPowerMS2 Numeric vector, length 1. Resolving power to be used with
+#' isotopologue_window_multiplier to determine size of the isotopologue window.
+#' USe resolving power at 400 m/z for best results.
+#' @param isotopologue_window_multiplier Numeric vector, length 1. After the width
+#' at half-max is estimated from resPowerMS2 at a particular m/z value, it is
+#' multiplied by this number to determine width of the isotopologue window.
+#' @param mz_window Numeric vector, length 1. Controls the width of the window used
+#' for the "specZoom" output which focuses on isotopic distributions of single charge
+#' states of single fragments.
+#' @param ms_filter Specified level to use for extracting XICs, in case the data
+#' of interest is at the MS3 level. Defaults to "ms2", can be set to "ms3".
+#' @param rawrrTemp Path to temporary directory to be used by the rawrr package.
+#' Defaults to tempdir().
+#' @param save_spec_object Boolean value. Controls whether an R object containing
+#' the zoomed MS2 spectra is saved to the outputdir. Defaults to FALSE.
 #'
 #' @return
 #' @export
 #'
+#' @import MSnbase
 #' @importFrom magrittr %>%
 #'
-#' @examples
 
 make_every_XIC_MS2_single <-
    function(
@@ -53,15 +91,16 @@ make_every_XIC_MS2_single <-
       fragment_pos_cutoff = c(1, 50),
       abund_cutoff = 5,
       XIC_tol_MS2 = 10,
-      XIC_cutoff = 0.000001,
+      XIC_cutoff = 0.000000001,
       use_IAA = FALSE,
       include_PTMs = TRUE,
       scoreMFAcutoff = 0.3,
-      cosinesimcutoff = 0.99,
-      SN_cutoff = 10,
+      cosinesimcutoff = 0.975,
+      SN_cutoff = 20,
       resPowerMS2 = 150000,
       isotopologue_window_multiplier = 6,
       mz_window = 5,
+      ms_filter = "ms2",
       rawrrTemp = tempdir(),
       save_spec_object = FALSE
    ) {
