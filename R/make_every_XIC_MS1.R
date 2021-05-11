@@ -1,33 +1,74 @@
 #' make_every_XIC_MS1
 #'
-#' @param rawFileDir
-#' @param rawFileName
-#' @param targetSeqData
-#' @param outputDir
-#' @param target_col_name
-#' @param target_sequence_col_name
-#' @param PTMname_col_name
-#' @param PTMformula_col_name1
-#' @param PTMformula_col_name2
-#' @param isoAbund
-#' @param target_charges
-#' @param mass_range
-#' @param mz_range
-#' @param abund_cutoff
-#' @param sample_n_pforms
-#' @param XIC_tol
-#' @param use_IAA
-#' @param include_PTMs
-#' @param save_output
-#' @param scoreMFAcutoff
-#' @param cosinesimcutoff
-#' @param SN_cutoff
-#' @param resPowerMS1
-#' @param isotopologue_window_multiplier
-#' @param mz_window
-#' @param return_timers
-#' @param rawrrTemp
-#' @param save_spec_object
+#' @param rawFileDir Directory containing target raw file.
+#' @param rawFileName Target raw file name.
+#' @param targetSeqData Path to target sequences data. Should be a .csv file.
+#' @param outputDir Path to output directory.
+#' @param target_col_name Name of column in target sequences data which contains
+#' unique identifiers for proteoforms to be identified.Defaults to "UNIPROTKB".
+#' @param target_sequence_col_name Name of column in target sequences data which
+#' contains the amino acid sequences of target proteoforms.Defaults to
+#' "ProteoformSequence".
+#' @param PTMname_col_name Name of column in target sequences data which
+#' contains names and positions of PTMs. Defaults to "PTMname".
+#' @param PTMformula_col_name1 Name of column in target sequences data which
+#' contains chemical formulas for PTMs to be added to the formula of the bare
+#' proteoform sequence. Defaults to "FormulaToAdd".
+#' @param PTMformula_col_name2 Name of column in target sequences data which
+#' contains chemical formulas for PTMs to be subtracted from the formula of the
+#' bare proteoform sequence. Defaults to "FormulaToSubtract".
+#' @param isoAbund Named numeric vector specifying abundances of isotopes to be
+#' used for generating theoretical isotopic distributions. See data(isotopes,
+#' package = 'enviPat') for isotope names. Defaults to c("12C" = 0.9893, "14N" = 0.99636).
+#' @param target_charges Numeric vector, length 2. Range of charges used to
+#' generate theoretical isotopic distributions.
+#' @param mass_range Numeric vector, length 2. Mass range used to filter the
+#' target sequences data on the basis of monoisotopic mass. Defaults to c(0, 100000)
+#' - effectively no filter.
+#' @param mz_range Numeric vector, length 2. m/z range used to filter putative
+#' theoretical isotopic distributions, i.e. only theoretical peaks in this m/z
+#' range will be considered. Defaults to c(600,2000).
+#' @param abund_cutoff Numeric vector, length 1. Controls the minimum relative
+#' abundance (compared to the theoretical highest abundance isotopologue) an
+#' isotopologue peak must have to be included in the search. Defaults to 5.
+#' @param sample_n_pforms Numeric vector, length 1. Number of proteoforms to
+#' randomly sample from the the target sequences data. Defaults to NULL.
+#' @param XIC_tol Numeric vector, length 1. Tolerance (in ppm) used to generate extracted ion chromatograms
+#' from theoretical isotopic distributions. Defaults to 5.
+#' @param use_IAA Boolean value. Controls whether proteoform sequences should be
+#' considered to be alkylated with iodoacetamide at all cysteine residues. Argument
+#' is passed to OrgMassSpecR::ConvertPeptide.
+#' @param include_PTMs Boolean value. Controls whether PTM chemical formulas are
+#' added when generating theoretical isotopic distributions. If false, ONLY the
+#' bare sequence is considered. Defaults to TRUE.
+#' @param save_output Boolean value. Controls whether output is saved to outputDir.
+#' Defaults to TRUE.
+#' @param scoreMFAcutoff Numeric vector, length 1. Minimum value of ScoreMFA for
+#' comparison of theoretical and observed isotopic distributions to be considered
+#' valid. Defaults to 0.3.
+#' @param cosinesimcutoff Numeric vector, length 1. Minimum value of cosine
+#' similarity (AKA dot product) for comparison of theoretical and observed isotopic
+#' distributions to be considered valid. Defaults to 0.9.
+#' @param SN_cutoff Numeric vector, length 1. Minimum allowed value for the estimated
+#' S/N of the observed isotopologue peak corresponding to the theoretical highest
+#' abundance isotopologue. Defaults to 20.
+#' @param resPowerMS1 Numeric vector, length 1. Resolving power to be used with
+#' isotopologue_window_multiplier to determine size of the isotopologue window.
+#' USe resolving power at 400 m/z for best results.
+#' @param isotopologue_window_multiplier Numeric vector, length 1. After the width
+#' at half-max is estimated from resPowerMS1 at a particular m/z value, it is
+#' multiplied by this number to determine width of the isotopologue window.
+#' Defaults to 8.
+#' @param mz_window Numeric vector, length 1. Controls the width of the window used
+#' for the "specZoom" output which focuses on isotopic distributions of single charge
+#' states of single proteoforms. Defaults to 3.
+#' @param return_timers Boolean value. Controls whether the function returns a
+#' dataframe of timers (TRUE) or an R object containing the zoomed MS2 spectra
+#' (FALSE). Defaults to TRUE.
+#' @param rawrrTemp Path to temporary directory to be used by the rawrr package.
+#' Defaults to tempdir().
+#' @param save_spec_object Boolean value. Controls whether an R object containing
+#' the zoomed MS1 spectra is saved to the outputdir. Defaults to TRUE.
 #'
 #' @return
 #' @export
@@ -35,7 +76,6 @@
 #' @import MSnbase
 #' @importFrom magrittr %>%
 #'
-#' @examples
 
 make_every_XIC_MS1 <-
    function(
@@ -52,21 +92,21 @@ make_every_XIC_MS1 <-
       target_charges = c(1:50),
       mass_range = c(0,100000),
       mz_range = c(600,2000),
-      abund_cutoff = 15,
+      abund_cutoff = 5,
       sample_n_pforms = NULL,
-      XIC_tol = 2,
+      XIC_tol = 5,
       use_IAA = FALSE,
       include_PTMs = TRUE,
       save_output = TRUE,
       scoreMFAcutoff = 0.3,
-      cosinesimcutoff = 0.8,
-      SN_cutoff = 10,
+      cosinesimcutoff = 0.9,
+      SN_cutoff = 20,
       resPowerMS1 = 300000,
-      isotopologue_window_multiplier = 6,
+      isotopologue_window_multiplier = 8,
       mz_window = 3,
       return_timers = TRUE,
       rawrrTemp = tempdir(),
-      save_spec_object = FALSE
+      save_spec_object = TRUE
    ) {
 
       library(rawrr)
