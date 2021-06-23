@@ -1,14 +1,16 @@
 Package: GEX
 Title: Generate XICs and MS for a set of search sequences
-Version: 0.0.1.1
+Version: 0.1.0.0
 Authors@R: 
     person(given = "David",
            family = "Butcher",
            role = c("aut", "cre"),
-           email = "drdavidbutcher@gmail.com",
+           email = "davidsbutcher@protonmail.com",
            comment = c(ORCID = "0000-0002-1268-4150"))
 Description: Generate XICs and MS for a set of search sequences.
-License: CC BY-NC 4.0
+License: MIT + file LICENSE
+biocViews:
+Imports:
 Encoding: UTF-8
 LazyData: true
 RoxygenNote: 7.1.1

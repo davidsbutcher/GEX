@@ -21,12 +21,12 @@ make_every_XIC_MS2_single(
   fragment_pos_cutoff = c(1, 50),
   abund_cutoff = 5,
   XIC_tol_MS2 = 10,
-  XIC_cutoff = 1e-06,
+  XIC_cutoff = 1e-09,
   use_IAA = FALSE,
   include_PTMs = TRUE,
   scoreMFAcutoff = 0.3,
-  cosinesimcutoff = 0.99,
-  SN_cutoff = 10,
+  cosinesimcutoff = 0.975,
+  SN_cutoff = 20,
   resPowerMS2 = 150000,
   isotopologue_window_multiplier = 6,
   mz_window = 5,
@@ -35,7 +35,95 @@ make_every_XIC_MS2_single(
 )
 }
 \arguments{
-\item{save_spec_object}{}
+\item{rawFileDir}{Directory containing target raw file.}
+
+\item{rawFileName}{Target raw file name.}
+
+\item{targetSeqData}{Path to target sequences data. Should be a .csv file.}
+
+\item{outputDir}{Path to output directory.}
+
+\item{target_col_name}{Name of column in target sequences data which contains
+unique identifiers for proteoforms to be identified. Defaults to "UNIPROTKB".}
+
+\item{target_sequence_col_name}{Name of column in target sequences data which
+contains the amino acid sequences of target proteoforms.Defaults to
+"ProteoformSequence".}
+
+\item{PTMname_col_name}{Name of column in target sequences data which
+contains names and positions of PTMs. Defaults to "PTMname".}
+
+\item{PTMformula_col_name1}{Name of column in target sequences data which
+contains chemical formulas for PTMs to be added to the formula of the bare
+proteoform sequence. Defaults to "FormulaToAdd".}
+
+\item{PTMformula_col_name2}{Name of column in target sequences data which
+contains chemical formulas for PTMs to be subtracted from the formula of the
+bare proteoform sequence.}
+
+\item{isoAbund}{Named numeric vector specifying abundances of isotopes to be
+used for generating theoretical isotopic distributions. See data(isotopes,
+package = 'enviPat') for isotope names.}
+
+\item{fragment_charges}{Numeric vector. Range of charges used to
+generate fragment libraries. Argument passed to MSnbase::calculateFragments.}
+
+\item{fragment_types}{Character vector. Types of fragments to be included in
+generation of fragment libraries. Argument passed to MSnbase::calculateFragments.}
+
+\item{fragment_mz_range}{Numeric vector, length 2. Range of m/z values to use
+for filtering fragment libraries. Fragments whose theoretical m/z values are
+outside of this range will be removed before analysis.}
+
+\item{fragment_pos_cutoff}{Numeric vector, length 2. Range of fragment positions,
+or lengths, to be used for generating fragment libraries.}
+
+\item{abund_cutoff}{Numeric vector, length 1. Controls the minimum relative
+abundance (compared to the theoretical highest abundance isotopologue) a
+fragment isotopologue peak must have to be included in the search. Defaults to 5.}
+
+\item{XIC_tol_MS2}{Numeric vector, length 1. Tolerance (in ppm) used to generate
+extracted ion chromatograms from theoretical isotopic distributions. Defaults to 5.}
+
+\item{XIC_cutoff}{Numeric vector, length 1.}
+
+\item{use_IAA}{Boolean value. Controls whether fragments should be
+considered to be alkylated with iodoacetamide at all cysteine residues. Argument
+is passed to OrgMassSpecR::ConvertPeptide.}
+
+\item{include_PTMs}{Boolean value. Controls whether PTM chemical formulas are
+added when generating theoretical isotopic distributions for fragments. If
+false, ONLY the bare fragment sequence is considered. Defaults to TRUE.}
+
+\item{scoreMFAcutoff}{Numeric vector, length 1. Minimum value of ScoreMFA for
+comparison of theoretical and observed isotopic distributions to be considered
+valid.}
+
+\item{cosinesimcutoff}{Numeric vector, length 1. Minimum value of cosine
+similarity (AKA dot product) for comparison of theoretical and observed isotopic
+distributions to be considered valid.}
+
+\item{SN_cutoff}{Numeric vector, length 1. Minimum allowed value for the estimated
+S/N of the observed isotopologue peak corresponding to the theoretical highest
+abundance isotopologue.}
+
+\item{resPowerMS2}{Numeric vector, length 1. Resolving power to be used with
+isotopologue_window_multiplier to determine size of the isotopologue window.
+USe resolving power at 400 m/z for best results.}
+
+\item{isotopologue_window_multiplier}{Numeric vector, length 1. After the width
+at half-max is estimated from resPowerMS2 at a particular m/z value, it is
+multiplied by this number to determine width of the isotopologue window.}
+
+\item{mz_window}{Numeric vector, length 1. Controls the width of the window used
+for the "specZoom" output which focuses on isotopic distributions of single charge
+states of single fragments.}
+
+\item{rawrrTemp}{Path to temporary directory to be used by the rawrr package.
+Defaults to tempdir().}
+
+\item{save_spec_object}{Boolean value. Controls whether an R object containing
+the zoomed MS2 spectra is saved to the outputdir. Defaults to FALSE.}
 }
 \value{
 

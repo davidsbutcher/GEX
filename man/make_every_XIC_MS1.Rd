@@ -18,24 +18,120 @@ make_every_XIC_MS1(
   target_charges = c(1:50),
   mass_range = c(0, 1e+05),
   mz_range = c(600, 2000),
-  abund_cutoff = 15,
+  abund_cutoff = 5,
   sample_n_pforms = NULL,
-  XIC_tol = 2,
+  XIC_tol = 5,
   use_IAA = FALSE,
+  include_PTMs = TRUE,
   save_output = TRUE,
   scoreMFAcutoff = 0.3,
-  cosinesimcutoff = 0.8,
-  SN_cutoff = 10,
+  cosinesimcutoff = 0.9,
+  SN_cutoff = 20,
   resPowerMS1 = 3e+05,
-  isotopologue_window_multiplier = 6,
+  isotopologue_window_multiplier = 8,
   mz_window = 3,
   return_timers = TRUE,
   rawrrTemp = tempdir(),
-  save_spec_object = FALSE
+  save_spec_object = TRUE
 )
 }
 \arguments{
-\item{save_spec_object}{}
+\item{rawFileDir}{Directory containing target raw file.}
+
+\item{rawFileName}{Target raw file name.}
+
+\item{targetSeqData}{Path to target sequences data. Should be a .csv file.}
+
+\item{outputDir}{Path to output directory.}
+
+\item{target_col_name}{Name of column in target sequences data which contains
+unique identifiers for proteoforms to be identified.Defaults to "UNIPROTKB".}
+
+\item{target_sequence_col_name}{Name of column in target sequences data which
+contains the amino acid sequences of target proteoforms.Defaults to
+"ProteoformSequence".}
+
+\item{PTMname_col_name}{Name of column in target sequences data which
+contains names and positions of PTMs. Defaults to "PTMname".}
+
+\item{PTMformula_col_name1}{Name of column in target sequences data which
+contains chemical formulas for PTMs to be added to the formula of the bare
+proteoform sequence. Defaults to "FormulaToAdd".}
+
+\item{PTMformula_col_name2}{Name of column in target sequences data which
+contains chemical formulas for PTMs to be subtracted from the formula of the
+bare proteoform sequence. Defaults to "FormulaToSubtract".}
+
+\item{isoAbund}{Named numeric vector specifying abundances of isotopes to be
+used for generating theoretical isotopic distributions. See data(isotopes,
+package = 'enviPat') for isotope names. Defaults to c("12C" = 0.9893, "14N" = 0.99636).}
+
+\item{target_charges}{Numeric vector, length 2. Range of charges used to
+generate theoretical isotopic distributions.}
+
+\item{mass_range}{Numeric vector, length 2. Mass range used to filter the
+target sequences data on the basis of monoisotopic mass. Defaults to c(0, 100000)
+- effectively no filter.}
+
+\item{mz_range}{Numeric vector, length 2. m/z range used to filter putative
+theoretical isotopic distributions, i.e. only theoretical peaks in this m/z
+range will be considered. Defaults to c(600,2000).}
+
+\item{abund_cutoff}{Numeric vector, length 1. Controls the minimum relative
+abundance (compared to the theoretical highest abundance isotopologue) an
+isotopologue peak must have to be included in the search. Defaults to 5.}
+
+\item{sample_n_pforms}{Numeric vector, length 1. Number of proteoforms to
+randomly sample from the the target sequences data. Defaults to NULL.}
+
+\item{XIC_tol}{Numeric vector, length 1. Tolerance (in ppm) used to generate extracted ion chromatograms
+from theoretical isotopic distributions. Defaults to 5.}
+
+\item{use_IAA}{Boolean value. Controls whether proteoform sequences should be
+considered to be alkylated with iodoacetamide at all cysteine residues. Argument
+is passed to OrgMassSpecR::ConvertPeptide.}
+
+\item{include_PTMs}{Boolean value. Controls whether PTM chemical formulas are
+added when generating theoretical isotopic distributions. If false, ONLY the
+bare sequence is considered. Defaults to TRUE.}
+
+\item{save_output}{Boolean value. Controls whether output is saved to outputDir.
+Defaults to TRUE.}
+
+\item{scoreMFAcutoff}{Numeric vector, length 1. Minimum value of ScoreMFA for
+comparison of theoretical and observed isotopic distributions to be considered
+valid. Defaults to 0.3.}
+
+\item{cosinesimcutoff}{Numeric vector, length 1. Minimum value of cosine
+similarity (AKA dot product) for comparison of theoretical and observed isotopic
+distributions to be considered valid. Defaults to 0.9.}
+
+\item{SN_cutoff}{Numeric vector, length 1. Minimum allowed value for the estimated
+S/N of the observed isotopologue peak corresponding to the theoretical highest
+abundance isotopologue. Defaults to 20.}
+
+\item{resPowerMS1}{Numeric vector, length 1. Resolving power to be used with
+isotopologue_window_multiplier to determine size of the isotopologue window.
+USe resolving power at 400 m/z for best results.}
+
+\item{isotopologue_window_multiplier}{Numeric vector, length 1. After the width
+at half-max is estimated from resPowerMS1 at a particular m/z value, it is
+multiplied by this number to determine width of the isotopologue window.
+Defaults to 8.}
+
+\item{mz_window}{Numeric vector, length 1. Controls the width of the window used
+for the "specZoom" output which focuses on isotopic distributions of single charge
+states of single proteoforms. Defaults to 3.}
+
+\item{return_timers}{Boolean value. Controls whether the function returns a
+dataframe of timers (TRUE) or an R object containing the zoomed MS2 spectra
+(FALSE). Defaults to TRUE.}
+
+\item{rawrrTemp}{Path to temporary directory to be used by the rawrr package.
+Defaults to tempdir().}
+
+\item{save_spec_object}{Boolean value. Controls whether an R object containing
+the zoomed MS1 spectra is saved to the outputdir. Defaults to TRUE.}
 }
 \value{
 

@@ -629,18 +629,24 @@ make_every_XIC_MS2_single <-
                         dplyr::case_when(
                            type == "b" & pos >= target_PTM_pos[[i]][j] ~ target_PTM_chemform[[i]][j],
                            type == "y" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ target_PTM_chemform[[i]][j],
+                           type == "c" & pos >= target_PTM_pos[[i]][j] ~ target_PTM_chemform[[i]][j],
+                           type == "z" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ target_PTM_chemform[[i]][j],
                            TRUE ~ "C0"
                         ),
                      PTM =
                         dplyr::case_when(
                            type == "b" & pos >= target_PTM_pos[[i]][j] ~ paste0(PTM, target_PTM[[i]][j], sep = "; "),
                            type == "y" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ paste0(PTM, target_PTM[[i]][j], sep = "; "),
+                           type == "c" & pos >= target_PTM_pos[[i]][j] ~ paste0(PTM, target_PTM[[i]][j], sep = "; "),
+                           type == "z" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ paste0(PTM, target_PTM[[i]][j], sep = "; "),
                            TRUE ~ ""
                         ),
                      PTM_chemform =
                         dplyr::case_when(
                            type == "b" & pos >= target_PTM_pos[[i]][j] ~ paste0(PTM_chemform, target_PTM_chemform[[i]][j], sep = "; "),
                            type == "y" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ paste0(PTM_chemform, target_PTM_chemform[[i]][j], sep = "; "),
+                           type == "c" & pos >= target_PTM_pos[[i]][j] ~ paste0(PTM_chemform, target_PTM_chemform[[i]][j], sep = "; "),
+                           type == "z" & pos > nchar(target_seqs[[i]]) - target_PTM_pos[[i]][j] ~ paste0(PTM_chemform, target_PTM_chemform[[i]][j], sep = "; "),
                            TRUE ~ ""
                         )
                   )
@@ -1073,6 +1079,16 @@ make_every_XIC_MS2_single <-
             rawFileMetadata %>%
             dplyr::pull(scan)
 
+         # Check to make sure scan nums has length > 1. If not, set it to 1.
+         # This may happen if the raw file contains a single scan or lacks
+         # appropriate metadata
+
+         if (length(scan_nums) == 0) {
+
+            scan_nums <- list(1)
+
+         }
+
          RT_of_maxTIC_MS2 <-
             XIC_MS2_sum_trunc %>%
             purrr::map_depth(
@@ -1308,7 +1324,6 @@ make_every_XIC_MS2_single <-
                )
             )
 
-
          intensity_obs_MS2 <-
             purrr::pmap(
                list(
@@ -1337,7 +1352,6 @@ make_every_XIC_MS2_single <-
                )
             )
 
-
          mz_theo_MS2 <-
             purrr::map_depth(
                iso_dist_cluster_trunc,
@@ -1351,6 +1365,18 @@ make_every_XIC_MS2_single <-
                3,
                ~dplyr::pull(.x, abundance)
             )
+
+         # Determine number of consecutive isotopologue peaks
+
+
+
+
+
+
+
+
+
+
 
          # Calculate scaling factor for intensity_theo_MS2
 
@@ -1385,7 +1411,6 @@ make_every_XIC_MS2_single <-
             )
 
          # Calculate S/N for observed and theoretical intensities
-
 
          SN_estimate_obs_MS2 <-
             purrr::map2(
